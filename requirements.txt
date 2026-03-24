@@ -3,7 +3,7 @@ uvicorn
 yfinance
 fredapi
 pandas
-pandas-ta
+ta
 requests
 apscheduler
 python-dotenv

@@ -152,14 +152,15 @@ def fetch_rsi(ticker: str = "SPY", period: int = 14) -> dict:
         return cached
 
     try:
-        import pandas_ta as ta
+        from ta.momentum import RSIIndicator
 
         stock = yf.Ticker(ticker)
         hist = stock.history(period="3mo")
         if hist.empty:
             return {"value": None, "error": f"{ticker}データ取得失敗"}
 
-        rsi = ta.rsi(hist["Close"], length=period)
+        rsi_indicator = RSIIndicator(hist["Close"], window=period)
+        rsi = rsi_indicator.rsi()
         current_rsi = float(rsi.iloc[-1])
         prev_rsi = float(rsi.iloc[-2])
 
