@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crash Detector - 暴落検知ダッシュボード</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <h1 class="logo">CRASH DETECTOR</h1>
+        <span class="subtitle">暴落検知・投資タイミング判断</span>
+      </div>
+      <div class="header-right">
+        <span class="update-time" id="updateTime">読み込み中...</span>
+        <button class="btn-refresh" onclick="refreshData()">更新</button>
+      </div>
+    </header>
+
+    <!-- Main Score -->
+    <section class="score-section">
+      <div class="score-card">
+        <div id="gaugeChart" class="gauge-container"></div>
+        <div class="score-info">
+          <div class="score-number" id="scoreNumber">--</div>
+          <div class="score-label" id="scoreLabel">読み込み中</div>
+          <div class="score-action" id="scoreAction"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bottom Signal -->
+    <section class="signal-section" id="signalSection" style="display:none;">
+      <div class="signal-card">
+        <div class="signal-header">
+          <span class="signal-icon">⚡</span>
+          <span class="signal-title" id="signalTitle">底打ちシグナル検出</span>
+          <span class="signal-count" id="signalCount">0/7</span>
+        </div>
+        <div class="signal-conditions" id="signalConditions"></div>
+      </div>
+    </section>
+
+    <!-- Indicator Cards -->
+    <section class="indicators-section">
+      <h2 class="section-title">主要指標</h2>
+      <div class="indicator-grid" id="indicatorGrid"></div>
+    </section>
+
+    <!-- Sector Heatmap -->
+    <section class="sector-section">
+      <h2 class="section-title">セクターヒートマップ</h2>
+      <div class="sector-grid" id="sectorGrid"></div>
+    </section>
+
+    <!-- Watchlist -->
+    <section class="watchlist-section">
+      <h2 class="section-title">監視銘柄（一発逆転枠）</h2>
+      <div class="watchlist-grid" id="watchlistGrid"></div>
+    </section>
+
+    <!-- Geopolitical -->
+    <section class="geo-section">
+      <h2 class="section-title">地政学リスク</h2>
+      <div class="geo-grid" id="geoGrid"></div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>※ 本システムは投資助言ではありません。投資判断は自己責任でお願いします。</p>
+      <p>Data: yfinance / FRED / CNN Fear&Greed</p>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

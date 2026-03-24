@@ -5,10 +5,13 @@ Crash Detector API - FastAPI Server
 
 import os
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from data_fetcher import (
     fetch_vix,
@@ -41,9 +44,18 @@ app.add_middleware(
 
 FRED_API_KEY = os.getenv("FRED_API_KEY")
 
+# 静的ファイル配信（フロントエンド統合）
+STATIC_DIR = Path(__file__).parent / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
 
 @app.get("/")
 def root():
+    """ダッシュボードHTMLを返す（staticフォルダがあれば）"""
+    index = STATIC_DIR / "index.html"
+    if index.exists():
+        return FileResponse(str(index))
     return {
         "name": "Crash Detector API",
         "version": "1.0.0",
