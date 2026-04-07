@@ -355,35 +355,56 @@ async function refreshData() {
 }
 
 // ============================================================
-// 資金状況
+// 資金状況（ブラウザのlocalStorageに保存。サーバー再起動で消えない）
 // ============================================================
-async function loadBudget() {
-  try {
-    const data = await fetchJSON('/api/budget');
-    const fmt = (n) => `${(n / 10000).toFixed(0)}万円`;
+const BUDGET_KEY = 'crash_detector_budget';
+const INITIAL_BUDGET = { nisa: 2400000, tokutei: 570000 };
 
-    document.getElementById('nisaRemaining').textContent = fmt(data.nisa.remaining);
-    document.getElementById('tokuteiRemaining').textContent = fmt(data.tokutei.remaining);
-    document.getElementById('totalRemaining').textContent = fmt(data.total_remaining);
+function getBudgetData() {
+  const saved = localStorage.getItem(BUDGET_KEY);
+  if (saved) return JSON.parse(saved);
+  return { investments: [] };
+}
 
-    const nisaStatus = document.getElementById('nisaStatus');
-    const tokuteiStatus = document.getElementById('tokuteiStatus');
+function saveBudgetData(data) {
+  localStorage.setItem(BUDGET_KEY, JSON.stringify(data));
+}
 
-    if (data.nisa.invested > 0) {
-      nisaStatus.textContent = `${fmt(data.nisa.invested)} 投入済み`;
-      nisaStatus.style.color = '#22c55e';
-    } else {
-      nisaStatus.textContent = '未投入';
-    }
+function loadBudget() {
+  const data = getBudgetData();
+  const fmt = (n) => {
+    if (n >= 10000) return `${(n / 10000).toFixed(0)}万円`;
+    return `${n.toLocaleString()}円`;
+  };
 
-    if (data.tokutei.invested > 0) {
-      tokuteiStatus.textContent = `${fmt(data.tokutei.invested)} 投入済み`;
-      tokuteiStatus.style.color = '#22c55e';
-    } else {
-      tokuteiStatus.textContent = '未投入';
-    }
-  } catch (e) {
-    console.error('Budget load error:', e);
+  let nisaUsed = 0, tokuteiUsed = 0;
+  for (const inv of data.investments) {
+    if (inv.account === 'nisa') nisaUsed += inv.amount;
+    if (inv.account === 'tokutei') tokuteiUsed += inv.amount;
+  }
+
+  const nisaRemain = INITIAL_BUDGET.nisa - nisaUsed;
+  const tokuteiRemain = INITIAL_BUDGET.tokutei - tokuteiUsed;
+
+  document.getElementById('nisaRemaining').textContent = `残り ${fmt(nisaRemain)}`;
+  document.getElementById('tokuteiRemaining').textContent = `残り ${fmt(tokuteiRemain)}`;
+  document.getElementById('totalRemaining').textContent = fmt(nisaRemain + tokuteiRemain);
+
+  const nisaStatus = document.getElementById('nisaStatus');
+  const tokuteiStatus = document.getElementById('tokuteiStatus');
+
+  if (nisaUsed > 0) {
+    nisaStatus.textContent = `${fmt(nisaUsed)} 投入済み`;
+    nisaStatus.style.color = '#22c55e';
+  } else {
+    nisaStatus.textContent = '未投入';
+  }
+
+  if (tokuteiUsed > 0) {
+    tokuteiStatus.textContent = `${fmt(tokuteiUsed)} 投入済み`;
+    tokuteiStatus.style.color = '#22c55e';
+  } else {
+    tokuteiStatus.textContent = '未投入';
   }
 }
 
@@ -396,38 +417,45 @@ function hideInvestForm() {
   document.getElementById('investForm').style.display = 'none';
 }
 
-async function submitInvest() {
+function submitInvest() {
   const account = document.getElementById('investAccount').value;
   const amount = parseInt(document.getElementById('investAmount').value);
   const target = document.getElementById('investTarget').value;
   const msg = document.getElementById('investMessage');
 
-  if (!amount || amount <= 0) { msg.textContent = '金額を入力してください'; return; }
-  if (!target) { msg.textContent = '何を買ったか入力してください'; return; }
+  if (!amount || amount <= 0) { msg.textContent = '金額を入力してください'; msg.style.color = '#ef4444'; return; }
+  if (!target) { msg.textContent = '何を買ったか入力してください'; msg.style.color = '#ef4444'; return; }
 
-  try {
-    const res = await fetch(API_BASE + '/api/budget/invest', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account, amount, target }),
-    });
-    const data = await res.json();
+  const data = getBudgetData();
 
-    if (data.error) {
-      msg.textContent = data.error;
-      msg.style.color = '#ef4444';
-    } else {
-      msg.textContent = data.message;
-      msg.style.color = '#22c55e';
-      document.getElementById('investAmount').value = '';
-      document.getElementById('investTarget').value = '';
-      loadBudget();
-      setTimeout(hideInvestForm, 2000);
-    }
-  } catch (e) {
-    msg.textContent = 'エラーが発生しました';
-    msg.style.color = '#ef4444';
+  // 残額チェック
+  let used = 0;
+  for (const inv of data.investments) {
+    if (inv.account === account) used += inv.amount;
   }
+  const remaining = INITIAL_BUDGET[account] - used;
+  const label = account === 'nisa' ? 'NISA成長枠' : '特定口座';
+
+  if (amount > remaining) {
+    msg.textContent = `${label}の残額は${remaining.toLocaleString()}円です`;
+    msg.style.color = '#ef4444';
+    return;
+  }
+
+  data.investments.push({
+    account,
+    amount,
+    target,
+    date: new Date().toLocaleDateString('ja-JP'),
+  });
+  saveBudgetData(data);
+
+  msg.textContent = `${label}に${amount.toLocaleString()}円（${target}）を記録しました`;
+  msg.style.color = '#22c55e';
+  document.getElementById('investAmount').value = '';
+  document.getElementById('investTarget').value = '';
+  loadBudget();
+  setTimeout(hideInvestForm, 2000);
 }
 
 window.addEventListener('DOMContentLoaded', () => { initGauge(); refreshData(); loadBudget(); });
