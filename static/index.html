@@ -71,20 +71,8 @@
           <span id="totalRemaining">--</span>
         </div>
       </div>
-      <button class="btn-invest" onclick="showInvestForm()">投入を記録する</button>
-      <div class="invest-form" id="investForm" style="display:none;">
-        <select id="investAccount">
-          <option value="nisa">NISA成長枠</option>
-          <option value="tokutei">特定口座</option>
-        </select>
-        <input type="number" id="investAmount" placeholder="金額（円）" step="10000">
-        <input type="text" id="investTarget" placeholder="何を買った？（例: eMAXIS S&P500）">
-        <div class="invest-buttons">
-          <button class="btn-invest-submit" onclick="submitInvest()">記録する</button>
-          <button class="btn-invest-cancel" onclick="hideInvestForm()">やめる</button>
-        </div>
-        <div class="invest-message" id="investMessage"></div>
-      </div>
+      <div class="invest-history" id="investHistory" style="display:none;"></div>
+      <div class="invest-note">※ 投入記録はClaude Codeで報告すると自動反映されます</div>
     </section>
 
     <!-- 監視銘柄（シンプル版） -->

@@ -344,6 +344,7 @@ async function refreshData() {
     if (adviceData && adviceData.advice) {
       renderToday(adviceData.advice);
       renderAdviceSectors(adviceData.advice);
+      loadBudget(adviceData.advice.strategy_params);
     }
   } catch (e) {
     console.error('Data fetch error:', e);
@@ -355,36 +356,36 @@ async function refreshData() {
 }
 
 // ============================================================
-// 資金状況（ブラウザのlocalStorageに保存。サーバー再起動で消えない）
+// 資金状況（APIのstrategy_paramsから取得。Claude Codeで報告→自動反映）
 // ============================================================
-const BUDGET_KEY = 'crash_detector_budget';
-const INITIAL_BUDGET = { nisa: 2400000, tokutei: 570000 };
 
-function getBudgetData() {
-  const saved = localStorage.getItem(BUDGET_KEY);
-  if (saved) return JSON.parse(saved);
-  return { investments: [] };
-}
-
-function saveBudgetData(data) {
-  localStorage.setItem(BUDGET_KEY, JSON.stringify(data));
-}
-
-function loadBudget() {
-  const data = getBudgetData();
+function loadBudget(strategyParams) {
   const fmt = (n) => {
     if (n >= 10000) return `${(n / 10000).toFixed(0)}万円`;
     return `${n.toLocaleString()}円`;
   };
 
-  let nisaUsed = 0, tokuteiUsed = 0;
-  for (const inv of data.investments) {
-    if (inv.account === 'nisa') nisaUsed += inv.amount;
-    if (inv.account === 'tokutei') tokuteiUsed += inv.amount;
+  if (!strategyParams) {
+    document.getElementById('totalRemaining').textContent = '読み込み中...';
+    return;
   }
 
-  const nisaRemain = INITIAL_BUDGET.nisa - nisaUsed;
-  const tokuteiRemain = INITIAL_BUDGET.tokutei - tokuteiUsed;
+  const tranches = strategyParams.tranches || [];
+  const nisaBudget = strategyParams.nisa_growth_budget || 2400000;
+  const tokuteiBudget = strategyParams.tokutei_budget || 570000;
+
+  let nisaUsed = 0, tokuteiUsed = 0;
+  const doneList = [];
+  for (const t of tranches) {
+    if (t.status === 'done') {
+      if (t.account === 'nisa') nisaUsed += t.amount;
+      if (t.account === 'tokutei') tokuteiUsed += t.amount;
+      doneList.push(t);
+    }
+  }
+
+  const nisaRemain = nisaBudget - nisaUsed;
+  const tokuteiRemain = tokuteiBudget - tokuteiUsed;
 
   document.getElementById('nisaRemaining').textContent = `残り ${fmt(nisaRemain)}`;
   document.getElementById('tokuteiRemaining').textContent = `残り ${fmt(tokuteiRemain)}`;
@@ -406,57 +407,15 @@ function loadBudget() {
   } else {
     tokuteiStatus.textContent = '未投入';
   }
-}
 
-function showInvestForm() {
-  document.getElementById('investForm').style.display = 'block';
-  document.getElementById('investMessage').textContent = '';
-}
-
-function hideInvestForm() {
-  document.getElementById('investForm').style.display = 'none';
-}
-
-function submitInvest() {
-  const account = document.getElementById('investAccount').value;
-  const amount = parseInt(document.getElementById('investAmount').value);
-  const target = document.getElementById('investTarget').value;
-  const msg = document.getElementById('investMessage');
-
-  if (!amount || amount <= 0) { msg.textContent = '金額を入力してください'; msg.style.color = '#ef4444'; return; }
-  if (!target) { msg.textContent = '何を買ったか入力してください'; msg.style.color = '#ef4444'; return; }
-
-  const data = getBudgetData();
-
-  // 残額チェック
-  let used = 0;
-  for (const inv of data.investments) {
-    if (inv.account === account) used += inv.amount;
+  // 投入履歴を表示
+  const historyEl = document.getElementById('investHistory');
+  if (historyEl && doneList.length > 0) {
+    historyEl.innerHTML = '<div class="history-title">投入履歴</div>' +
+      doneList.map(t => `<div class="history-item">✅ ${t.date || ''} ${t.ticker || t.label} ${fmt(t.amount)}</div>`).join('');
+    historyEl.style.display = 'block';
   }
-  const remaining = INITIAL_BUDGET[account] - used;
-  const label = account === 'nisa' ? 'NISA成長枠' : '特定口座';
-
-  if (amount > remaining) {
-    msg.textContent = `${label}の残額は${remaining.toLocaleString()}円です`;
-    msg.style.color = '#ef4444';
-    return;
-  }
-
-  data.investments.push({
-    account,
-    amount,
-    target,
-    date: new Date().toLocaleDateString('ja-JP'),
-  });
-  saveBudgetData(data);
-
-  msg.textContent = `${label}に${amount.toLocaleString()}円（${target}）を記録しました`;
-  msg.style.color = '#22c55e';
-  document.getElementById('investAmount').value = '';
-  document.getElementById('investTarget').value = '';
-  loadBudget();
-  setTimeout(hideInvestForm, 2000);
 }
 
-window.addEventListener('DOMContentLoaded', () => { initGauge(); refreshData(); loadBudget(); });
+window.addEventListener('DOMContentLoaded', () => { initGauge(); refreshData(); });
 window.addEventListener('resize', () => { if (gaugeChart) gaugeChart.resize(); });
