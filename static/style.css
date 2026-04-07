@@ -316,6 +316,76 @@ body {
   font-size: 0.9rem;
 }
 
+/* 投入ボタン・フォーム */
+.btn-invest {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  background: transparent;
+  border: 1px dashed var(--accent-blue);
+  border-radius: var(--radius-sm);
+  color: var(--accent-blue);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.invest-form {
+  margin-top: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.invest-form select,
+.invest-form input {
+  width: 100%;
+  padding: 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.invest-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-invest-submit {
+  flex: 1;
+  padding: 10px;
+  background: var(--accent-green);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-invest-cancel {
+  flex: 1;
+  padding: 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.invest-message {
+  font-size: 0.8rem;
+  font-weight: 600;
+  min-height: 1.2em;
+}
+
 /* ===== 監視銘柄 ===== */
 .watch-section { margin-bottom: 16px; }
 

@@ -58,18 +58,32 @@
       <div class="budget-card" id="budgetCard">
         <div class="budget-row">
           <span class="budget-label">NISA成長枠</span>
-          <span class="budget-amount">240万円</span>
-          <span class="budget-status" id="nisaStatus">未投入</span>
+          <span class="budget-amount" id="nisaRemaining">--</span>
+          <span class="budget-status" id="nisaStatus">--</span>
         </div>
         <div class="budget-row">
           <span class="budget-label">特定口座</span>
-          <span class="budget-amount">57万円</span>
-          <span class="budget-status" id="tokuteiStatus">未投入</span>
+          <span class="budget-amount" id="tokuteiRemaining">--</span>
+          <span class="budget-status" id="tokuteiStatus">--</span>
         </div>
         <div class="budget-total">
-          <span>合計</span>
-          <span>297万円</span>
+          <span>残り合計</span>
+          <span id="totalRemaining">--</span>
         </div>
+      </div>
+      <button class="btn-invest" onclick="showInvestForm()">投入を記録する</button>
+      <div class="invest-form" id="investForm" style="display:none;">
+        <select id="investAccount">
+          <option value="nisa">NISA成長枠</option>
+          <option value="tokutei">特定口座</option>
+        </select>
+        <input type="number" id="investAmount" placeholder="金額（円）" step="10000">
+        <input type="text" id="investTarget" placeholder="何を買った？（例: eMAXIS S&P500）">
+        <div class="invest-buttons">
+          <button class="btn-invest-submit" onclick="submitInvest()">記録する</button>
+          <button class="btn-invest-cancel" onclick="hideInvestForm()">やめる</button>
+        </div>
+        <div class="invest-message" id="investMessage"></div>
       </div>
     </section>
 

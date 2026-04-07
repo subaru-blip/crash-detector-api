@@ -26,6 +26,7 @@ from data_fetcher import (
 )
 from crash_score import calculate_crash_score
 from investment_advisor import generate_advice
+from budget_tracker import get_budget_status, record_investment, get_investment_history
 
 load_dotenv()
 
@@ -179,6 +180,29 @@ def get_investment_advice():
         "crash_score": score_result,
         "timestamp": datetime.now().isoformat(),
     }
+
+
+@app.get("/api/budget")
+def get_budget():
+    """資金状況（投入済み・残額）"""
+    return get_budget_status()
+
+
+@app.post("/api/budget/invest")
+def post_invest(data: dict):
+    """投入記録を追加"""
+    return record_investment(
+        account=data.get("account", "nisa"),
+        amount=data.get("amount", 0),
+        target=data.get("target", ""),
+        note=data.get("note", ""),
+    )
+
+
+@app.get("/api/budget/history")
+def get_history():
+    """投入履歴一覧"""
+    return get_investment_history()
 
 
 @app.get("/api/health")

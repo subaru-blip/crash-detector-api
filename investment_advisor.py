@@ -51,35 +51,35 @@ def evaluate_energy(wti_price: float, xle_price: float, xle_high_52w: float) -> 
 
     # 判定ロジック
     if wti_price <= 80:
-        signal = "BUY"
-        action = f"NISA枠でXLE（エネルギーETF）を60万買い。WTI ${wti_price}は停戦後の底値圏"
+        signal = "STRONG_BUY"
+        action = f"楽天証券でXLE（エネルギーETF）を60万円分、今すぐ注文してください"
         urgency = "high"
-        reason = "原油が大幅下落。停戦合意後のバーゲン価格"
+        reason = f"原油が${wti_price}まで下がりました。停戦後のバーゲン価格です。注文から翌営業日に買えます"
     elif wti_price <= 90:
         signal = "BUY"
-        action = f"NISA枠でXLE 60万を検討。WTI ${wti_price}は調整後の買い場"
+        action = f"楽天証券でXLE（エネルギーETF）を60万円分、今週中に注文してください"
         urgency = "medium"
-        reason = "原油調整中。エネルギー長期上昇トレンドへの押し目"
+        reason = f"原油が${wti_price}に調整中。この水準なら買っても大丈夫です"
     elif xle_from_high <= -20:
         signal = "BUY"
-        action = f"XLEが52週高値から{xle_from_high:.0f}%下落。反発を狙って買い"
+        action = f"XLEが高値から{xle_from_high:.0f}%下落。60万円分を今週中に注文してください"
         urgency = "medium"
-        reason = "ETF自体が大幅下落。原油価格に関わらず買い場"
+        reason = "エネルギーETFが大幅下落中。反発すれば利益が出ます"
     elif wti_price >= 120:
-        signal = "CONSIDER"
-        action = f"特定口座でXOM/CVXを30万検討。WTI ${wti_price}で封鎖長期化確認"
-        urgency = "low"
-        reason = "原油高が続くなら個別株で利益を取る。ただし天井リスクあり"
+        signal = "WAIT"
+        action = "エネルギーはまだ買わないでください"
+        urgency = "none"
+        reason = f"原油${wti_price}は高すぎます。今買うと高値掴みになるリスクがあります"
     elif wti_price >= 100 and xle_from_high >= -10:
         signal = "WAIT"
-        action = "エネルギーは待機。XLE高値圏（停戦で急落リスク）"
+        action = "エネルギーはまだ買わないでください"
         urgency = "none"
-        reason = f"XLE 52週高値の{100 + xle_from_high:.0f}%水準。上昇余地より下落リスクが大きい"
+        reason = f"XLEが高値圏です。停戦が進めば急落するリスクがあります。原油${90}以下まで待ちましょう"
     else:
-        signal = "WATCH"
-        action = "エネルギーは監視継続。WTI $90以下で買い検討"
+        signal = "WAIT"
+        action = "エネルギーはまだ買わないでください"
         urgency = "none"
-        reason = "中間価格帯。明確なシグナルなし"
+        reason = f"原油${wti_price}は中途半端な価格帯です。${90}以下に下がったら買い時です"
 
     return {
         "sector": "エネルギー",
@@ -118,29 +118,29 @@ def evaluate_semiconductor(
 
     if nvda_from_high <= -40:
         signal = "STRONG_BUY"
-        action = f"NVIDIA ${nvda_price}（高値比{nvda_from_high:.0f}%）。特定口座で25万即買い"
+        action = f"楽天証券でNVIDIA株を25万円分、今すぐ注文してください"
         urgency = "high"
-        reason = "過去最高決算のNVIDIAが-40%は異常値。AI需要は健在"
+        reason = f"NVIDIAが${nvda_price}（高値から{nvda_from_high:.0f}%下落）。AIの需要は変わっていないのに異常な安さです。翌営業日に買えます"
     elif nvda_from_high <= -30:
         signal = "BUY"
-        action = f"NVIDIA ${nvda_price}（高値比{nvda_from_high:.0f}%）。特定口座で25万買い"
-        urgency = "high"
-        reason = "バリュエーション調整による下落。業績は過去最高"
-    elif nvda_from_high <= -20:
-        signal = "CONSIDER"
-        action = f"NVIDIA ${nvda_price}（高値比{nvda_from_high:.0f}%）。10万の打診買いを検討"
+        action = f"楽天証券でNVIDIA株を25万円分、今週中に注文してください"
         urgency = "medium"
-        reason = "買い圏に近づいている。決算（5/20）前の打診買い候補"
-    elif nvda_from_high <= -10:
-        signal = "WATCH"
-        action = f"NVIDIAは監視継続。高値比{nvda_from_high:.0f}%でまだ割高"
+        reason = f"NVIDIAが${nvda_price}（高値から{nvda_from_high:.0f}%下落）。決算は過去最高なのに安くなっています"
+    elif nvda_from_high <= -20:
+        signal = "WAIT"
+        action = "NVIDIAはまだ買わないでください"
         urgency = "none"
-        reason = "もう少し下がればチャンス"
+        reason = f"${nvda_price}（高値から{nvda_from_high:.0f}%下落）。あと10%下がれば買い時です。${nvda_high_52w * 0.7:.0f}以下まで待ちましょう"
+    elif nvda_from_high <= -10:
+        signal = "WAIT"
+        action = "NVIDIAはまだ買わないでください"
+        urgency = "none"
+        reason = f"${nvda_price}はまだ高いです。${nvda_high_52w * 0.7:.0f}以下まで待ちましょう"
     else:
         signal = "WAIT"
-        action = "NVIDIAは待機。高値圏で割高"
+        action = "NVIDIAはまだ買わないでください"
         urgency = "none"
-        reason = f"高値比{nvda_from_high:.0f}%。下落を待つ"
+        reason = f"${nvda_price}は高値圏です。今買うと損する可能性が高いです"
 
     # SOXL判定（Crash Scoreと連動）
     soxl_advice = None
@@ -196,34 +196,34 @@ def evaluate_broad_market(
     # 段階判定
     if crash_score <= 20 and sp500_from_high <= -15:
         signal = "STRONG_BUY"
-        action = "NISA残り全額投入。S&P500 + オルカンに分散"
+        action = "楽天証券でeMAXIS Slim S&P500を残り全額分、今すぐ注文してください"
         urgency = "high"
         tranche = "4回目（残り全額）"
-        reason = f"Crash Score {crash_score} + S&P500 高値比{sp500_from_high:.0f}%。底打ち接近"
+        reason = f"市場の恐怖度が極限（スコア{crash_score}）で、S&P500も{sp500_from_high:.0f}%下落。歴史的な買い場です。注文から2営業日で購入完了します"
     elif crash_score <= 30 and sp500_from_high <= -10:
         signal = "BUY"
-        action = "NISA 2〜3回目投入（各60万）。eMAXIS Slim S&P500"
-        urgency = "high"
+        action = "楽天証券でeMAXIS Slim S&P500を60万円分、今週中に注文してください"
+        urgency = "medium"
         tranche = "2〜3回目"
-        reason = f"恐怖ゾーン入り。S&P500が高値から{sp500_from_high:.0f}%下落"
+        reason = f"市場が怖がっている（スコア{crash_score}）＋株価も{sp500_from_high:.0f}%下落。この組み合わせは買い時です"
     elif sp500_from_high <= -10:
         signal = "BUY"
-        action = "NISA 1回目投入（60万）。eMAXIS Slim S&P500"
+        action = "楽天証券でeMAXIS Slim S&P500を60万円分、今週中に注文してください（NISA 1回目）"
         urgency = "medium"
         tranche = "1回目"
-        reason = f"S&P500が高値比-10%を割った。最初の投入タイミング"
+        reason = f"S&P500が高値から{sp500_from_high:.0f}%下落。4回に分けて買う1回目です。注文から2営業日で購入完了します"
     elif crash_score <= 40:
-        signal = "CONSIDER"
-        action = "投入準備。S&P500がもう少し下がれば1回目投入"
-        urgency = "low"
-        tranche = "準備中"
-        reason = f"センチメントは恐怖だがS&P500の下落幅はまだ浅い（{sp500_from_high:.0f}%）"
+        signal = "WAIT"
+        action = "S&P500はまだ買わないでください"
+        urgency = "none"
+        tranche = "待機中"
+        reason = f"みんな怖がっていますが、株価の下落はまだ{sp500_from_high:.0f}%で浅いです。-10%（{sp500_high * 0.9:.0f}）以下まで待ちましょう"
     else:
         signal = "WAIT"
-        action = "NISA投入は待機。暴落を待つ"
+        action = "S&P500はまだ買わないでください"
         urgency = "none"
-        tranche = "待機"
-        reason = f"Crash Score {crash_score}。まだ恐怖ゾーンではない"
+        tranche = "待機中"
+        reason = f"まだ通常の状態です。暴落が来たら教えます。{sp500_high * 0.9:.0f}以下になったら1回目を買います"
 
     # 6月末ルール
     deadline_note = None
@@ -360,13 +360,13 @@ def generate_advice(
 
     top = all_sectors[0]
     if top["urgency"] == "high":
-        headline = f"【今すぐ検討】{top['action']}"
+        headline = f"今すぐ注文してください → {top['action']}"
     elif top["urgency"] == "medium":
-        headline = f"【検討推奨】{top['action']}"
+        headline = f"今週中に注文を検討 → {top['action']}"
     elif top["urgency"] == "low":
-        headline = f"【準備開始】{top['action']}"
+        headline = f"まだ買わないでください。もう少しで条件達成です"
     else:
-        headline = "【待機】全セクター条件未達。次のシグナルを待つ"
+        headline = "まだ買わないでください。条件が揃うまで待ちましょう"
 
     # 全体サマリー
     active_signals = [s for s in all_sectors if s["signal"] in ("BUY", "STRONG_BUY")]

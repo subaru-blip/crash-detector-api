@@ -12,12 +12,12 @@ const INDICATOR_CONFIG = {
 };
 
 const SIGNAL_STYLES = {
-  STRONG_BUY: { color: '#ef4444', bg: 'rgba(239,68,68,0.15)', text: '今すぐ買い検討', icon: '🔥' },
-  BUY:        { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', text: '買い時が近い',   icon: '📈' },
-  CONSIDER:   { color: '#3b82f6', bg: 'rgba(59,130,246,0.15)', text: 'もう少しで買い', icon: '🔍' },
-  WATCH:      { color: '#64748b', bg: 'rgba(100,116,139,0.10)', text: '様子見',        icon: '👁' },
-  WAIT:       { color: '#475569', bg: 'rgba(71,85,105,0.10)',  text: 'まだ待つ',       icon: '⏳' },
-  UNKNOWN:    { color: '#475569', bg: 'rgba(71,85,105,0.10)',  text: '判定できず',     icon: '❓' },
+  STRONG_BUY: { color: '#ef4444', bg: 'rgba(239,68,68,0.15)', text: '今すぐ注文', icon: '🔴' },
+  BUY:        { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', text: '今週中に注文',  icon: '🟡' },
+  CONSIDER:   { color: '#3b82f6', bg: 'rgba(59,130,246,0.15)', text: 'まだ買わない',  icon: '🔵' },
+  WATCH:      { color: '#64748b', bg: 'rgba(100,116,139,0.10)', text: 'まだ買わない', icon: '⚪' },
+  WAIT:       { color: '#475569', bg: 'rgba(71,85,105,0.10)',  text: 'まだ買わない',  icon: '⚪' },
+  UNKNOWN:    { color: '#475569', bg: 'rgba(71,85,105,0.10)',  text: '判定できず',    icon: '❓' },
 };
 
 const GEO_NAMES = { wti: '原油', gold: '金', usdjpy: 'ドル/円' };
@@ -354,5 +354,81 @@ async function refreshData() {
   }
 }
 
-window.addEventListener('DOMContentLoaded', () => { initGauge(); refreshData(); });
+// ============================================================
+// 資金状況
+// ============================================================
+async function loadBudget() {
+  try {
+    const data = await fetchJSON('/api/budget');
+    const fmt = (n) => `${(n / 10000).toFixed(0)}万円`;
+
+    document.getElementById('nisaRemaining').textContent = fmt(data.nisa.remaining);
+    document.getElementById('tokuteiRemaining').textContent = fmt(data.tokutei.remaining);
+    document.getElementById('totalRemaining').textContent = fmt(data.total_remaining);
+
+    const nisaStatus = document.getElementById('nisaStatus');
+    const tokuteiStatus = document.getElementById('tokuteiStatus');
+
+    if (data.nisa.invested > 0) {
+      nisaStatus.textContent = `${fmt(data.nisa.invested)} 投入済み`;
+      nisaStatus.style.color = '#22c55e';
+    } else {
+      nisaStatus.textContent = '未投入';
+    }
+
+    if (data.tokutei.invested > 0) {
+      tokuteiStatus.textContent = `${fmt(data.tokutei.invested)} 投入済み`;
+      tokuteiStatus.style.color = '#22c55e';
+    } else {
+      tokuteiStatus.textContent = '未投入';
+    }
+  } catch (e) {
+    console.error('Budget load error:', e);
+  }
+}
+
+function showInvestForm() {
+  document.getElementById('investForm').style.display = 'block';
+  document.getElementById('investMessage').textContent = '';
+}
+
+function hideInvestForm() {
+  document.getElementById('investForm').style.display = 'none';
+}
+
+async function submitInvest() {
+  const account = document.getElementById('investAccount').value;
+  const amount = parseInt(document.getElementById('investAmount').value);
+  const target = document.getElementById('investTarget').value;
+  const msg = document.getElementById('investMessage');
+
+  if (!amount || amount <= 0) { msg.textContent = '金額を入力してください'; return; }
+  if (!target) { msg.textContent = '何を買ったか入力してください'; return; }
+
+  try {
+    const res = await fetch(API_BASE + '/api/budget/invest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account, amount, target }),
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      msg.textContent = data.error;
+      msg.style.color = '#ef4444';
+    } else {
+      msg.textContent = data.message;
+      msg.style.color = '#22c55e';
+      document.getElementById('investAmount').value = '';
+      document.getElementById('investTarget').value = '';
+      loadBudget();
+      setTimeout(hideInvestForm, 2000);
+    }
+  } catch (e) {
+    msg.textContent = 'エラーが発生しました';
+    msg.style.color = '#ef4444';
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => { initGauge(); refreshData(); loadBudget(); });
 window.addEventListener('resize', () => { if (gaugeChart) gaugeChart.resize(); });
