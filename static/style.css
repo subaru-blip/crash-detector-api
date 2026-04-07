@@ -503,4 +503,191 @@ body {
   .geo-grid {
     grid-template-columns: 1fr;
   }
+
+  .advice-sectors {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
+   Investment Advisor Panel
+   ============================================================ */
+
+.advice-section {
+  margin: 0 auto 24px;
+  max-width: 1200px;
+  padding: 0 16px;
+}
+
+.advice-headline-card {
+  background: linear-gradient(135deg, #1a2332, #0f172a);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+
+.advice-headline-text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.advice-summary {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.advice-bottom-note {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--accent-red);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.advice-sectors {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.advice-sector-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  transition: border-color 0.2s;
+}
+
+.advice-sector-card:hover {
+  background: var(--bg-card-hover);
+}
+
+.advice-sector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.advice-sector-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.advice-signal-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  padding: 3px 10px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.advice-action {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.advice-reason {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.soxl-box {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.soxl-signal {
+  font-size: 0.8rem;
+  color: var(--accent-yellow);
+}
+
+.advice-targets-list {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+.target-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.target-row.target-current {
+  color: var(--accent-cyan);
+  font-weight: 600;
+}
+
+.target-label {
+  text-transform: capitalize;
+}
+
+.target-value {
+  text-align: right;
+}
+
+/* Forex */
+.forex-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.forex-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.forex-risk {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+}
+
+.forex-risk-high { background: var(--accent-red); color: #fff; }
+.forex-risk-medium { background: var(--accent-orange); color: #fff; }
+.forex-risk-low { background: var(--accent-green); color: #fff; }
+.forex-risk-favorable { background: var(--accent-cyan); color: #000; }
+
+.forex-note {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.forex-opp {
+  font-size: 0.8rem;
+  color: var(--accent-blue);
+  font-weight: 500;
 }

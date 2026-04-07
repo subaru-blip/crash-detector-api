@@ -7,8 +7,24 @@ import time
 import json
 import sqlite3
 import os
+import certifi
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
+
+# Windows日本語パスでのSSL証明書エラー回避
+# certifiのパスに日本語が含まれるとcurl_cffiが読めないため、TEMPにコピー
+_cert_src = certifi.where()
+_cert_dst = os.path.join(os.environ.get("TEMP", "/tmp"), "cacert.pem")
+try:
+    shutil.copy2(_cert_src, _cert_dst)
+    os.environ["CURL_CA_BUNDLE"] = _cert_dst
+    os.environ["SSL_CERT_FILE"] = _cert_dst
+    os.environ["REQUESTS_CA_BUNDLE"] = _cert_dst
+except Exception:
+    os.environ["CURL_CA_BUNDLE"] = _cert_src
+    os.environ["SSL_CERT_FILE"] = _cert_src
+    os.environ["REQUESTS_CA_BUNDLE"] = _cert_src
 
 import yfinance as yf
 import pandas as pd
@@ -123,23 +139,47 @@ def fetch_fear_greed() -> dict:
     if cached:
         return cached
 
+    # Method 1: CNN API (日付なしURL)
     try:
-        url = f"https://production.dataviz.cnn.io/index/fearandgreed/graphdata/{datetime.now().strftime('%Y-%m-%d')}"
+        url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
         resp = requests.get(url, timeout=10, headers={
-            "User-Agent": "Mozilla/5.0"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "Referer": "https://edition.cnn.com/markets/fear-and-greed",
         })
-        data = resp.json()
-        fg = data.get("fear_and_greed", {})
-        result = {
-            "value": round(fg.get("score", 0), 1),
-            "rating": fg.get("rating", "unknown"),
-            "prev_close": round(fg.get("previous_close", 0), 1),
-            "source": "CNN",
-        }
-        set_cache("fear_greed", result)
-        return result
-    except Exception as e:
-        return {"value": None, "error": f"Fear&Greed取得失敗: {str(e)}"}
+        if resp.status_code == 200:
+            data = resp.json()
+            fg = data.get("fear_and_greed", {})
+            result = {
+                "value": round(fg.get("score", 0), 1),
+                "rating": fg.get("rating", "unknown"),
+                "prev_close": round(fg.get("previous_close", 0), 1),
+                "source": "CNN",
+            }
+            set_cache("fear_greed", result)
+            return result
+    except Exception:
+        pass
+
+    # Method 2: Alternative Fear & Greed API
+    try:
+        url = "https://fear-and-greed-index.p.rapidapi.com/v1/fgi"
+        resp = requests.get(url, timeout=10, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        })
+        if resp.status_code == 200:
+            data = resp.json()
+            result = {
+                "value": round(float(data.get("fgi", {}).get("now", {}).get("value", 50)), 1),
+                "rating": data.get("fgi", {}).get("now", {}).get("valueText", "unknown"),
+                "source": "alternative",
+            }
+            set_cache("fear_greed", result)
+            return result
+    except Exception:
+        pass
+
+    return {"value": None, "error": "Fear&Greed取得失敗: Bot検知またはAPI変更"}
 
 
 # ============================================================

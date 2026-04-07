@@ -25,6 +25,7 @@ from data_fetcher import (
     fetch_watchlist,
 )
 from crash_score import calculate_crash_score
+from investment_advisor import generate_advice
 
 load_dotenv()
 
@@ -128,6 +129,56 @@ def get_geopolitical():
 def get_watchlist():
     """監視銘柄（SOXL, NVIDIA等）"""
     return fetch_watchlist()
+
+
+@app.get("/api/advice")
+def get_investment_advice():
+    """
+    投資アドバイスエンドポイント: セクター別の買い/待ちシグナル + 具体的アクション
+    Crash Score + セクターデータ + 地政学データを統合して判定
+    """
+    # 全データを取得
+    vix = fetch_vix(FRED_API_KEY)
+    fear_greed = fetch_fear_greed()
+    rsi = fetch_rsi("SPY")
+    credit_spread = fetch_credit_spread(FRED_API_KEY)
+    yield_curve = fetch_yield_curve(FRED_API_KEY)
+    ma_deviation = fetch_ma_deviation("SPY")
+
+    indicators = {
+        "vix": vix,
+        "fear_greed": fear_greed,
+        "rsi": rsi,
+        "credit_spread": credit_spread,
+        "pcr": {"value": None},
+        "aaii_bear": {"value": None},
+        "ma_deviation": ma_deviation,
+        "yield_curve": yield_curve,
+    }
+
+    # Crash Score算出
+    score_result = calculate_crash_score(indicators)
+    crash_score = score_result["score"]
+    bottom_signals = score_result.get("bottom_signals")
+
+    # 監視銘柄・地政学データ
+    watchlist_data = fetch_watchlist()
+    geo_data = fetch_geopolitical()
+
+    # 投資アドバイス生成
+    advice = generate_advice(
+        crash_score=crash_score,
+        indicators=indicators,
+        watchlist=watchlist_data,
+        geopolitical=geo_data,
+        bottom_signals=bottom_signals,
+    )
+
+    return {
+        "advice": advice,
+        "crash_score": score_result,
+        "timestamp": datetime.now().isoformat(),
+    }
 
 
 @app.get("/api/health")
