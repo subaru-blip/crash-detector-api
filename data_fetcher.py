@@ -397,28 +397,46 @@ def fetch_geopolitical() -> dict:
         return cached
 
     tickers = {
-        "wti": "CL=F",
-        "gold": "GC=F",
-        "usdjpy": "JPY=X",
+        "wti": ["CL=F", "USO"],       # WTI先物、フォールバック: USO ETF
+        "gold": ["GC=F", "GLD"],       # 金先物、フォールバック: GLD ETF
+        "usdjpy": ["JPY=X", "USDJPY=X"],
     }
     result = {}
-    for name, ticker in tickers.items():
-        try:
-            stock = yf.Ticker(ticker)
-            hist = stock.history(period="5d")
-            if len(hist) >= 2:
-                current = float(hist["Close"].iloc[-1])
-                prev = float(hist["Close"].iloc[-2])
-                result[name] = {
-                    "value": round(current, 2),
-                    "change_pct": round((current / prev - 1) * 100, 2),
-                }
-            time.sleep(1)
-        except Exception:
-            result[name] = {"value": None, "error": "取得失敗"}
+    for name, ticker_list in tickers.items():
+        fetched = False
+        for ticker in ticker_list:
+            try:
+                stock = yf.Ticker(ticker)
+                hist = stock.history(period="5d")
+                if len(hist) >= 2:
+                    current = float(hist["Close"].iloc[-1])
+                    prev = float(hist["Close"].iloc[-2])
+                    result[name] = {
+                        "value": round(current, 2),
+                        "change_pct": round((current / prev - 1) * 100, 2),
+                        "ticker_used": ticker,
+                    }
+                    fetched = True
+                    break
+                time.sleep(1)
+            except Exception:
+                time.sleep(1)
+                continue
+        if not fetched:
+            # 全ティッカー失敗 → 期限切れキャッシュからでも取る
+            stale = get_cached(f"geopolitical_{name}_stale", max_age_hours=168)  # 1週間
+            if stale:
+                stale["stale"] = True
+                result[name] = stale
+            else:
+                result[name] = {"value": None, "error": "取得失敗"}
 
     result["source"] = "yfinance"
     set_cache("geopolitical", result)
+    # 個別にも長期キャッシュ保存（フォールバック用）
+    for name in ["wti", "gold", "usdjpy"]:
+        if name in result and result[name].get("value") is not None:
+            set_cache(f"geopolitical_{name}_stale", result[name])
     return result
 
 
