@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Crash Detector - 暴落検知ダッシュボード</title>
+  <title>投資ナビ - 今日の判断</title>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
   <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -12,8 +12,7 @@
     <!-- Header -->
     <header class="header">
       <div class="header-left">
-        <h1 class="logo">CRASH DETECTOR</h1>
-        <span class="subtitle">暴落検知・投資タイミング判断</span>
+        <h1 class="logo">投資ナビ</h1>
       </div>
       <div class="header-right">
         <span class="update-time" id="updateTime">読み込み中...</span>
@@ -21,69 +20,93 @@
       </div>
     </header>
 
-    <!-- Main Score -->
-    <section class="score-section">
-      <div class="score-card">
-        <div id="gaugeChart" class="gauge-container"></div>
-        <div class="score-info">
-          <div class="score-number" id="scoreNumber">--</div>
-          <div class="score-label" id="scoreLabel">読み込み中</div>
-          <div class="score-action" id="scoreAction"></div>
+    <!-- 今日の判断（最重要。これだけ見ればOK） -->
+    <section class="today-section" id="todaySection">
+      <div class="today-card" id="todayCard">
+        <div class="today-action-label">今やること</div>
+        <div class="today-headline" id="todayHeadline">読み込み中...</div>
+        <div class="today-summary" id="todaySummary"></div>
+        <div class="today-bottom-note" id="todayBottomNote" style="display:none;"></div>
+      </div>
+    </section>
+
+    <!-- 市場の温度（ゲージ） -->
+    <section class="temp-section">
+      <div class="temp-card">
+        <div class="temp-label">市場の温度</div>
+        <div class="temp-row">
+          <div id="gaugeChart" class="gauge-container-small"></div>
+          <div class="temp-info">
+            <div class="temp-number" id="scoreNumber">--</div>
+            <div class="temp-status" id="scoreLabel">読み込み中</div>
+            <div class="temp-explain" id="scoreAction"></div>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- Investment Advisor Panel (NEW) -->
-    <section class="advice-section" id="adviceSection" style="display:none;">
-      <div class="advice-headline-card" id="adviceHeadline">
-        <div class="advice-headline-text" id="adviceHeadlineText"></div>
-        <div class="advice-summary" id="adviceSummary"></div>
-        <div class="advice-bottom-note" id="adviceBottomNote" style="display:none;"></div>
-      </div>
-      <div class="advice-sectors" id="adviceSectors"></div>
-      <div class="advice-forex" id="adviceForex" style="display:none;"></div>
-      <div class="advice-targets" id="adviceTargets"></div>
+    <!-- セクター別アドバイス -->
+    <section class="sectors-section" id="adviceSection" style="display:none;">
+      <h2 class="section-title-simple">セクター別の判断</h2>
+      <div class="sector-cards" id="adviceSectors"></div>
+      <div class="forex-info" id="adviceForex" style="display:none;"></div>
     </section>
 
-    <!-- Bottom Signal -->
-      <div class="signal-card">
-        <div class="signal-header">
-          <span class="signal-icon">⚡</span>
-          <span class="signal-title" id="signalTitle">底打ちシグナル検出</span>
-          <span class="signal-count" id="signalCount">0/7</span>
+    <!-- 資金状況 -->
+    <section class="budget-section">
+      <h2 class="section-title-simple">資金状況</h2>
+      <div class="budget-card" id="budgetCard">
+        <div class="budget-row">
+          <span class="budget-label">NISA成長枠</span>
+          <span class="budget-amount">240万円</span>
+          <span class="budget-status" id="nisaStatus">未投入</span>
         </div>
-        <div class="signal-conditions" id="signalConditions"></div>
+        <div class="budget-row">
+          <span class="budget-label">特定口座</span>
+          <span class="budget-amount">57万円</span>
+          <span class="budget-status" id="tokuteiStatus">未投入</span>
+        </div>
+        <div class="budget-total">
+          <span>合計</span>
+          <span>297万円</span>
+        </div>
       </div>
     </section>
 
-    <!-- Indicator Cards -->
-    <section class="indicators-section">
-      <h2 class="section-title">主要指標</h2>
-      <div class="indicator-grid" id="indicatorGrid"></div>
+    <!-- 監視銘柄（シンプル版） -->
+    <section class="watch-section">
+      <h2 class="section-title-simple">注目している銘柄</h2>
+      <div class="watch-grid" id="watchlistGrid"></div>
     </section>
 
-    <!-- Sector Heatmap -->
-    <section class="sector-section">
-      <h2 class="section-title">セクターヒートマップ</h2>
-      <div class="sector-grid" id="sectorGrid"></div>
-    </section>
+    <!-- 詳細データ（折りたたみ） -->
+    <details class="detail-section">
+      <summary class="detail-toggle">詳細データを見る</summary>
 
-    <!-- Watchlist -->
-    <section class="watchlist-section">
-      <h2 class="section-title">監視銘柄（一発逆転枠）</h2>
-      <div class="watchlist-grid" id="watchlistGrid"></div>
-    </section>
+      <div class="detail-inner">
+        <h3 class="detail-subtitle">主要指標</h3>
+        <div class="indicator-grid" id="indicatorGrid"></div>
 
-    <!-- Geopolitical -->
-    <section class="geo-section">
-      <h2 class="section-title">地政学リスク</h2>
-      <div class="geo-grid" id="geoGrid"></div>
-    </section>
+        <h3 class="detail-subtitle">底打ちシグナル</h3>
+        <div class="signal-card" id="signalSection" style="display:none;">
+          <div class="signal-header">
+            <span class="signal-title" id="signalTitle">底打ちチェック</span>
+            <span class="signal-count" id="signalCount">0/7</span>
+          </div>
+          <div class="signal-conditions" id="signalConditions"></div>
+        </div>
+
+        <h3 class="detail-subtitle">セクター騰落率</h3>
+        <div class="sector-grid" id="sectorGrid"></div>
+
+        <h3 class="detail-subtitle">原油・金・為替</h3>
+        <div class="geo-grid" id="geoGrid"></div>
+      </div>
+    </details>
 
     <!-- Footer -->
     <footer class="footer">
-      <p>※ 本システムは投資助言ではありません。投資判断は自己責任でお願いします。</p>
-      <p>Data: yfinance / FRED / CNN Fear&Greed</p>
+      <p>※ 投資助言ではありません。判断は自己責任で。</p>
     </footer>
   </div>
 

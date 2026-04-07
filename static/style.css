@@ -1,8 +1,7 @@
-/* Crash Detector - Dashboard Styles */
+/* 投資ナビ - Mobile-First Dashboard */
 
 :root {
   --bg-primary: #0a0e17;
-  --bg-secondary: #111827;
   --bg-card: #1a2332;
   --bg-card-hover: #1f2b3d;
   --text-primary: #e2e8f0;
@@ -13,681 +12,524 @@
   --accent-orange: #f97316;
   --accent-yellow: #eab308;
   --accent-green: #22c55e;
-  --accent-purple: #a855f7;
   --accent-blue: #3b82f6;
   --accent-cyan: #06b6d4;
-  --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  --accent-purple: #a855f7;
   --radius: 12px;
   --radius-sm: 8px;
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+  font-family: -apple-system, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
-  min-height: 100vh;
+  font-size: 15px;
   line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }
 
 .app {
-  max-width: 1200px;
+  max-width: 600px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 0 12px 40px;
 }
 
-/* Header */
+/* ===== Header ===== */
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 0;
+  padding: 14px 0;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 .logo {
-  font-size: 1.5rem;
+  font-size: 1.1rem;
   font-weight: 800;
-  letter-spacing: 2px;
   background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-.subtitle {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-left: 12px;
-}
-
 .header-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .update-time {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
 }
 
 .btn-refresh {
-  padding: 6px 16px;
   background: var(--accent-blue);
-  color: white;
+  color: #fff;
   border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
+  border-radius: 6px;
+  padding: 6px 14px;
   font-size: 0.8rem;
   font-weight: 600;
-  transition: opacity 0.2s;
+  cursor: pointer;
 }
 
-.btn-refresh:hover {
-  opacity: 0.85;
-}
+.btn-refresh:disabled { opacity: 0.5; }
 
-.btn-refresh:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* ===== 今日の判断 ===== */
+.today-section { margin-bottom: 16px; }
 
-/* Score Section */
-.score-section {
-  margin-bottom: 24px;
-}
-
-.score-card {
+.today-card {
   background: var(--bg-card);
+  border: 2px solid var(--border);
   border-radius: var(--radius);
-  padding: 32px;
+  padding: 20px;
+}
+
+.today-action-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent-cyan);
+  margin-bottom: 8px;
+}
+
+.today-headline {
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.today-summary {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.today-bottom-note {
+  margin-top: 12px;
+  padding: 10px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-sm);
+  color: var(--accent-red);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* ===== 市場の温度 ===== */
+.temp-section { margin-bottom: 16px; }
+
+.temp-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.temp-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.temp-row {
   display: flex;
   align-items: center;
-  gap: 32px;
-  box-shadow: var(--shadow);
+  gap: 16px;
 }
 
-.gauge-container {
-  width: 280px;
-  height: 220px;
+.gauge-container-small {
+  width: 120px;
+  height: 100px;
   flex-shrink: 0;
 }
 
-.score-info {
-  flex: 1;
+.temp-info { flex: 1; }
+
+.temp-number {
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
-.score-number {
-  font-size: 4rem;
-  font-weight: 900;
-  line-height: 1;
+.temp-status {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 4px 0;
+}
+
+.temp-explain {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* ===== セクション共通 ===== */
+.section-title-simple {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  padding-left: 2px;
+}
+
+/* ===== セクター別アドバイス ===== */
+.sectors-section { margin-bottom: 16px; }
+
+.sector-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sector-advice-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.sa-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 8px;
 }
 
-.score-label {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.score-action {
-  font-size: 1rem;
-  color: var(--text-secondary);
-  padding: 6px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: var(--radius-sm);
-  display: inline-block;
-  margin-top: 8px;
-}
-
-/* Signal Section */
-.signal-section {
-  margin-bottom: 24px;
-}
-
-.signal-card {
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(249, 115, 22, 0.1));
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  border-radius: var(--radius);
-  padding: 20px;
-  animation: pulse-border 2s infinite;
-}
-
-@keyframes pulse-border {
-  0%, 100% { border-color: rgba(239, 68, 68, 0.4); }
-  50% { border-color: rgba(239, 68, 68, 0.8); }
-}
-
-.signal-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.signal-icon {
-  font-size: 1.5rem;
-}
-
-.signal-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--accent-orange);
-}
-
-.signal-count {
-  margin-left: auto;
-  font-size: 1.2rem;
-  font-weight: 800;
-  color: var(--accent-red);
-}
-
-.signal-conditions {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px;
-}
-
-.condition-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: var(--radius-sm);
+.sa-name {
   font-size: 0.85rem;
+  font-weight: 600;
 }
 
-.condition-icon {
-  font-size: 1rem;
+.sa-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fff;
+  padding: 3px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
 }
 
-.condition-value {
-  margin-left: auto;
+.sa-action {
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.sa-reason {
+  font-size: 0.75rem;
   color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.soxl-note {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--accent-yellow);
+}
+
+.lag-info {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: var(--accent-cyan);
+  padding: 4px 8px;
+  background: rgba(6, 182, 212, 0.08);
+  border-radius: 4px;
+}
+
+/* 為替 */
+.forex-simple {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: 10px;
   font-size: 0.8rem;
 }
 
-/* Section Titles */
-.section-title {
-  font-size: 1rem;
+.forex-badge {
+  font-size: 0.65rem;
   font-weight: 700;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 8px;
+}
+
+.forex-note-text {
   color: var(--text-secondary);
-  margin-bottom: 12px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  font-size: 0.75rem;
 }
 
-/* Indicator Grid */
-.indicators-section {
-  margin-bottom: 24px;
+/* ===== 資金状況 ===== */
+.budget-section { margin-bottom: 16px; }
+
+.budget-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
 }
 
+.budget-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.budget-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.budget-amount {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.budget-status {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  background: rgba(255,255,255,0.05);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.budget-total {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0 4px;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+/* ===== 監視銘柄 ===== */
+.watch-section { margin-bottom: 16px; }
+
+.watch-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.watch-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+
+.watch-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.watch-ticker {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.watch-price {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.watch-bottom {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+}
+
+.watch-label { color: var(--text-muted); }
+
+.watch-dd { font-weight: 600; }
+
+/* ===== 詳細データ（折りたたみ） ===== */
+.detail-section {
+  margin-bottom: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.detail-toggle {
+  padding: 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.detail-toggle::-webkit-details-marker { display: none; }
+
+.detail-toggle::before {
+  content: '▶ ';
+  font-size: 0.7rem;
+}
+
+details[open] .detail-toggle::before { content: '▼ '; }
+
+.detail-inner {
+  padding: 0 14px 14px;
+}
+
+.detail-subtitle {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 14px 0 8px;
+}
+
+.detail-subtitle:first-child { margin-top: 0; }
+
+/* 指標カード */
 .indicator-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .indicator-card {
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  padding: 16px;
-  transition: background 0.2s;
-}
-
-.indicator-card:hover {
-  background: var(--bg-card-hover);
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius-sm);
+  padding: 10px;
 }
 
 .indicator-name {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 8px;
+  margin-bottom: 2px;
 }
 
 .indicator-value {
-  font-size: 1.8rem;
-  font-weight: 800;
-  margin-bottom: 4px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 2px;
 }
 
 .indicator-status {
-  font-size: 0.8rem;
+  font-size: 0.65rem;
   font-weight: 600;
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: 4px;
-  display: inline-block;
 }
 
-.indicator-sub {
-  font-size: 0.7rem;
+.indicator-desc {
+  font-size: 0.6rem;
   color: var(--text-muted);
   margin-top: 4px;
 }
 
-/* Status Colors */
-.status-danger { color: var(--accent-red); background: rgba(239, 68, 68, 0.15); }
-.status-warning { color: var(--accent-orange); background: rgba(249, 115, 22, 0.15); }
-.status-neutral { color: var(--accent-yellow); background: rgba(234, 179, 8, 0.15); }
-.status-safe { color: var(--accent-green); background: rgba(34, 197, 94, 0.15); }
-.status-hot { color: var(--accent-purple); background: rgba(168, 85, 247, 0.15); }
+.status-danger { background: rgba(239,68,68,0.15); color: var(--accent-red); }
+.status-warning { background: rgba(249,115,22,0.15); color: var(--accent-orange); }
+.status-neutral { background: rgba(100,116,139,0.15); color: var(--text-secondary); }
+.status-safe { background: rgba(34,197,94,0.15); color: var(--accent-green); }
+.status-hot { background: rgba(168,85,247,0.15); color: var(--accent-purple); }
 
+/* 底打ちシグナル */
+.signal-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+}
+
+.signal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.signal-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.signal-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+}
+
+.condition-item {
+  font-size: 0.75rem;
+  padding: 3px 0;
+  color: var(--text-secondary);
+}
+
+/* セクター騰落 */
+.sector-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.sector-card-mini {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 8px;
+  font-size: 0.72rem;
+  background: rgba(255,255,255,0.03);
+  border-radius: 4px;
+}
+
+/* 地政学 */
+.geo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.geo-card-mini {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px;
+  font-size: 0.75rem;
+  background: rgba(255,255,255,0.03);
+  border-radius: var(--radius-sm);
+  gap: 2px;
+}
+
+/* 色ユーティリティ */
 .color-red { color: var(--accent-red); }
 .color-orange { color: var(--accent-orange); }
 .color-yellow { color: var(--accent-yellow); }
 .color-green { color: var(--accent-green); }
 .color-purple { color: var(--accent-purple); }
-
-/* Sector Grid */
-.sector-section {
-  margin-bottom: 24px;
-}
-
-.sector-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 8px;
-}
-
-.sector-card {
-  background: var(--bg-card);
-  border-radius: var(--radius-sm);
-  padding: 12px;
-  text-align: center;
-  border-left: 3px solid transparent;
-}
-
-.sector-name {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  margin-bottom: 4px;
-}
-
-.sector-change {
-  font-size: 1.3rem;
-  font-weight: 800;
-}
-
-.sector-ticker {
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
-.sector-positive { border-left-color: var(--accent-green); }
-.sector-negative { border-left-color: var(--accent-red); }
-
-/* Watchlist */
-.watchlist-section {
-  margin-bottom: 24px;
-}
-
-.watchlist-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 12px;
-}
-
-.watchlist-card {
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  padding: 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.watchlist-left .wl-ticker {
-  font-size: 1.1rem;
-  font-weight: 800;
-}
-
-.watchlist-left .wl-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
-.watchlist-right {
-  text-align: right;
-}
-
-.wl-price {
-  font-size: 1.2rem;
-  font-weight: 700;
-}
-
-.wl-drawdown {
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.drawdown-deep { color: var(--accent-red); }
-.drawdown-moderate { color: var(--accent-orange); }
-.drawdown-mild { color: var(--accent-yellow); }
-
-/* Geopolitical */
-.geo-section {
-  margin-bottom: 24px;
-}
-
-.geo-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-}
-
-.geo-card {
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  padding: 16px;
-  text-align: center;
-}
-
-.geo-name {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  margin-bottom: 8px;
-}
-
-.geo-value {
-  font-size: 1.6rem;
-  font-weight: 800;
-}
-
-.geo-change {
-  font-size: 0.85rem;
-  margin-top: 4px;
-}
+.color-blue { color: var(--accent-blue); }
 
 /* Footer */
 .footer {
   text-align: center;
-  padding: 24px 0;
-  border-top: 1px solid var(--border);
-  margin-top: 32px;
-}
-
-.footer p {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-}
-
-/* Loading */
-.loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
+  padding: 20px 0;
+  font-size: 0.65rem;
   color: var(--text-muted);
 }
 
-.spinner {
-  width: 24px;
-  height: 24px;
-  border: 3px solid var(--border);
-  border-top-color: var(--accent-cyan);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin-right: 12px;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .header {
-    flex-direction: column;
-    gap: 8px;
-    text-align: center;
-  }
-
-  .score-card {
-    flex-direction: column;
-    padding: 20px;
-    text-align: center;
-  }
-
-  .gauge-container {
-    width: 100%;
-    max-width: 280px;
-  }
-
-  .score-number {
-    font-size: 3rem;
-  }
-
-  .indicator-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .sector-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .geo-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .signal-conditions {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 480px) {
-  .indicator-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .sector-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .watchlist-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .geo-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .advice-sectors {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ============================================================
-   Investment Advisor Panel
-   ============================================================ */
-
-.advice-section {
-  margin: 0 auto 24px;
-  max-width: 1200px;
-  padding: 0 16px;
-}
-
-.advice-headline-card {
-  background: linear-gradient(135deg, #1a2332, #0f172a);
-  border: 2px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px 24px;
-  margin-bottom: 16px;
-  box-shadow: var(--shadow);
-}
-
-.advice-headline-text {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 8px;
-  line-height: 1.4;
-}
-
-.advice-summary {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-}
-
-.advice-bottom-note {
-  margin-top: 12px;
-  padding: 10px 14px;
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: var(--radius-sm);
-  color: var(--accent-red);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.advice-sectors {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.advice-sector-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
-  transition: border-color 0.2s;
-}
-
-.advice-sector-card:hover {
-  background: var(--bg-card-hover);
-}
-
-.advice-sector-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.advice-sector-name {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.advice-signal-badge {
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #fff;
-  padding: 3px 10px;
-  border-radius: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.advice-action {
-  font-size: 0.85rem;
-  color: var(--text-primary);
-  margin-bottom: 8px;
-  line-height: 1.5;
-  font-weight: 500;
-}
-
-.advice-reason {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-bottom: 10px;
-  line-height: 1.4;
-}
-
-.soxl-box {
-  margin: 8px 0;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: rgba(15, 23, 42, 0.6);
-}
-
-.soxl-signal {
-  font-size: 0.8rem;
-  color: var(--accent-yellow);
-}
-
-.advice-targets-list {
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
-  margin-top: 8px;
-}
-
-.target-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 3px 0;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
-.target-row.target-current {
-  color: var(--accent-cyan);
-  font-weight: 600;
-}
-
-.target-label {
-  text-transform: capitalize;
-}
-
-.target-value {
-  text-align: right;
-}
-
-/* Forex */
-.forex-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 18px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.forex-label {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.forex-risk {
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 10px;
-  text-transform: uppercase;
-}
-
-.forex-risk-high { background: var(--accent-red); color: #fff; }
-.forex-risk-medium { background: var(--accent-orange); color: #fff; }
-.forex-risk-low { background: var(--accent-green); color: #fff; }
-.forex-risk-favorable { background: var(--accent-cyan); color: #000; }
-
-.forex-note {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
-.forex-opp {
-  font-size: 0.8rem;
-  color: var(--accent-blue);
-  font-weight: 500;
+/* ===== PC表示（600px以上） ===== */
+@media (min-width: 601px) {
+  .app { max-width: 700px; padding: 0 24px 40px; }
+  .today-headline { font-size: 1.3rem; }
+  .watch-grid { grid-template-columns: repeat(4, 1fr); }
+  .indicator-grid { grid-template-columns: repeat(3, 1fr); }
+  .sector-grid { grid-template-columns: repeat(3, 1fr); }
 }

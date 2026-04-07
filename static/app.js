@@ -1,25 +1,26 @@
-/* Crash Detector - Frontend App */
+/* 投資ナビ - Frontend App */
 
 const API_BASE = location.origin;
 
 const INDICATOR_CONFIG = {
-  vix: { name: 'VIX', unit: '', thresholds: [20, 30, 40, 50] },
-  fear_greed: { name: 'Fear & Greed', unit: '', thresholds: [25, 40, 60, 75] },
-  rsi: { name: 'RSI (SPY)', unit: '', thresholds: [30, 40, 60, 70] },
-  credit_spread: { name: 'HY Spread', unit: 'bps', thresholds: [300, 400, 500, 700] },
-  ma_deviation: { name: 'MA200 乖離', unit: '%', thresholds: [-10, -5, 5, 10] },
-  yield_curve: { name: 'Yield Curve', unit: '', thresholds: [-0.5, 0, 0.5, 1.0] },
+  vix: { name: '恐怖指数（VIX）', unit: '', desc: '高いほど市場が怖がっている' },
+  fear_greed: { name: '市場心理', unit: '', desc: '低いほど悲観的（0-100）' },
+  rsi: { name: '売られすぎ度', unit: '', desc: '30以下は売られすぎ' },
+  credit_spread: { name: '信用リスク', unit: 'bps', desc: '高いほど企業の倒産リスク上昇' },
+  ma_deviation: { name: '平均からの乖離', unit: '%', desc: 'マイナスが大きいほど割安' },
+  yield_curve: { name: '景気見通し', unit: '', desc: 'マイナスは景気後退サイン' },
 };
 
-const SCORE_COLORS = {
-  red: '#ef4444',
-  orange: '#f97316',
-  yellow: '#eab308',
-  green: '#22c55e',
-  purple: '#a855f7',
+const SIGNAL_STYLES = {
+  STRONG_BUY: { color: '#ef4444', bg: 'rgba(239,68,68,0.15)', text: '今すぐ買い検討', icon: '🔥' },
+  BUY:        { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', text: '買い時が近い',   icon: '📈' },
+  CONSIDER:   { color: '#3b82f6', bg: 'rgba(59,130,246,0.15)', text: 'もう少しで買い', icon: '🔍' },
+  WATCH:      { color: '#64748b', bg: 'rgba(100,116,139,0.10)', text: '様子見',        icon: '👁' },
+  WAIT:       { color: '#475569', bg: 'rgba(71,85,105,0.10)',  text: 'まだ待つ',       icon: '⏳' },
+  UNKNOWN:    { color: '#475569', bg: 'rgba(71,85,105,0.10)',  text: '判定できず',     icon: '❓' },
 };
 
-const GEO_NAMES = { wti: 'WTI原油', gold: 'Gold', usdjpy: 'USD/JPY' };
+const GEO_NAMES = { wti: '原油', gold: '金', usdjpy: 'ドル/円' };
 
 let gaugeChart = null;
 
@@ -37,66 +38,170 @@ function initGauge() {
 
 function updateGauge(score, color) {
   if (!gaugeChart) return;
+  const colors = { red: '#ef4444', orange: '#f97316', yellow: '#eab308', green: '#22c55e', purple: '#a855f7' };
   gaugeChart.setOption({
     series: [{
-      type: 'gauge',
-      min: 0, max: 100,
-      splitNumber: 5,
-      progress: { show: true, width: 18, roundCap: true },
-      axisLine: { lineStyle: { width: 18, color: [[0.2, '#ef4444'], [0.4, '#f97316'], [0.6, '#eab308'], [0.8, '#22c55e'], [1, '#a855f7']] } },
+      type: 'gauge', min: 0, max: 100, splitNumber: 5,
+      progress: { show: true, width: 14, roundCap: true },
+      axisLine: { lineStyle: { width: 14, color: [[0.2,'#ef4444'],[0.4,'#f97316'],[0.6,'#eab308'],[0.8,'#22c55e'],[1,'#a855f7']] } },
       axisTick: { show: false },
-      splitLine: { length: 10, lineStyle: { width: 2, color: '#334155' } },
-      axisLabel: { distance: 25, color: '#64748b', fontSize: 11 },
-      pointer: { length: '60%', width: 5, itemStyle: { color: SCORE_COLORS[color] || '#eab308' } },
-      anchor: { show: true, size: 14, itemStyle: { borderWidth: 3, borderColor: SCORE_COLORS[color] || '#eab308' } },
-      title: { show: false },
-      detail: { show: false },
+      splitLine: { length: 8, lineStyle: { width: 2, color: '#334155' } },
+      axisLabel: { distance: 20, color: '#64748b', fontSize: 10 },
+      pointer: { length: '55%', width: 4, itemStyle: { color: colors[color] || '#eab308' } },
+      anchor: { show: true, size: 10, itemStyle: { borderWidth: 2, borderColor: colors[color] || '#eab308' } },
+      title: { show: false }, detail: { show: false },
       data: [{ value: score }],
     }],
   });
 }
 
-function getIndicatorStatus(key, value) {
-  if (value == null) return { text: 'N/A', cls: 'status-neutral' };
-  const cfg = INDICATOR_CONFIG[key];
-  if (!cfg) return { text: '', cls: 'status-neutral' };
-  const t = cfg.thresholds;
+// ============================================================
+// 今日の判断パネル
+// ============================================================
+function renderToday(advice) {
+  if (!advice) return;
 
+  const headline = document.getElementById('todayHeadline');
+  const summary = document.getElementById('todaySummary');
+  const bottomNote = document.getElementById('todayBottomNote');
+  const card = document.getElementById('todayCard');
+
+  // ヘッドラインを初心者向けに
+  headline.textContent = advice.headline;
+  summary.textContent = advice.summary;
+
+  // 緊急度で色を変える
+  const sectors = Object.values(advice.sectors);
+  const urgencyOrder = { high: 0, medium: 1, low: 2, none: 3 };
+  sectors.sort((a, b) => (urgencyOrder[a.urgency] || 3) - (urgencyOrder[b.urgency] || 3));
+  const top = sectors[0];
+  const style = SIGNAL_STYLES[top?.signal] || SIGNAL_STYLES.WAIT;
+  card.style.borderColor = style.color;
+  card.style.background = `linear-gradient(135deg, ${style.bg}, var(--bg-card))`;
+
+  if (advice.bottom_note) {
+    bottomNote.style.display = 'block';
+    bottomNote.textContent = advice.bottom_note;
+  }
+}
+
+// ============================================================
+// セクター別アドバイス
+// ============================================================
+function renderAdviceSectors(advice) {
+  const section = document.getElementById('adviceSection');
+  const container = document.getElementById('adviceSectors');
+  if (!section || !advice) return;
+  section.style.display = 'block';
+  container.innerHTML = '';
+
+  const sectorNames = {
+    energy: 'エネルギー（石油・ガス）',
+    semiconductor: '半導体（NVIDIA・AI）',
+    broad_market: '市場全体（S&P500）',
+  };
+
+  for (const [key, sector] of Object.entries(advice.sectors)) {
+    const style = SIGNAL_STYLES[sector.signal] || SIGNAL_STYLES.UNKNOWN;
+    const card = document.createElement('div');
+    card.className = 'sector-advice-card';
+    card.style.borderLeftColor = style.color;
+
+    // 約定ラグ情報
+    let lagHtml = '';
+    if (sector.signal === 'BUY' || sector.signal === 'STRONG_BUY' || sector.signal === 'CONSIDER') {
+      const lagInfo = getLagInfo(key);
+      if (lagInfo) {
+        lagHtml = `<div class="lag-info">注文から約${lagInfo.days}営業日で購入完了</div>`;
+      }
+    }
+
+    // SOXLの追加情報
+    let soxlHtml = '';
+    if (sector.soxl) {
+      const sStyle = SIGNAL_STYLES[sector.soxl.signal] || SIGNAL_STYLES.WATCH;
+      soxlHtml = `<div class="soxl-note" style="border-color:${sStyle.color}">${sStyle.icon} ${sector.soxl.action}</div>`;
+    }
+
+    card.innerHTML = `
+      <div class="sa-header">
+        <span class="sa-name">${sectorNames[key] || sector.sector}</span>
+        <span class="sa-badge" style="background:${style.color}">${style.text}</span>
+      </div>
+      <div class="sa-action">${sector.action}</div>
+      <div class="sa-reason">${sector.reason}</div>
+      ${soxlHtml}
+      ${lagHtml}
+    `;
+    container.appendChild(card);
+  }
+
+  // 為替
+  const forexEl = document.getElementById('adviceForex');
+  if (advice.forex && advice.forex.usdjpy) {
+    forexEl.style.display = 'block';
+    const fx = advice.forex;
+    const riskColors = { HIGH: '#ef4444', MEDIUM: '#f59e0b', LOW: '#22c55e', FAVORABLE: '#06b6d4' };
+    const riskLabels = { HIGH: '注意', MEDIUM: 'やや注意', LOW: '問題なし', FAVORABLE: '有利' };
+    forexEl.innerHTML = `
+      <div class="forex-simple">
+        <span>ドル円 ¥${fx.usdjpy.toFixed(0)}</span>
+        <span class="forex-badge" style="background:${riskColors[fx.risk_level]}">${riskLabels[fx.risk_level]}</span>
+        <span class="forex-note-text">${fx.opportunity}</span>
+      </div>
+    `;
+  }
+}
+
+function getLagInfo(sectorKey) {
+  const map = {
+    energy: { days: 1, note: '海外ETF（XLE）は翌営業日に約定' },
+    semiconductor: { days: 1, note: '米国株（NVIDIA）は翌営業日に約定' },
+    broad_market: { days: 2, note: '投資信託（eMAXIS Slim）は2営業日後に約定' },
+  };
+  return map[sectorKey];
+}
+
+// ============================================================
+// 既存パネル（指標・セクター・監視銘柄・地政学）
+// ============================================================
+function getIndicatorStatus(key, value) {
+  if (value == null) return { text: '--', cls: 'status-neutral' };
   if (key === 'vix') {
-    if (value >= 40) return { text: '極度の恐怖', cls: 'status-danger' };
-    if (value >= 30) return { text: '警戒', cls: 'status-warning' };
-    if (value >= 20) return { text: '通常', cls: 'status-neutral' };
-    return { text: '安定', cls: 'status-safe' };
+    if (value >= 40) return { text: 'かなり怖い', cls: 'status-danger' };
+    if (value >= 30) return { text: '不安', cls: 'status-warning' };
+    if (value >= 20) return { text: 'ふつう', cls: 'status-neutral' };
+    return { text: '安心', cls: 'status-safe' };
   }
   if (key === 'fear_greed') {
-    if (value <= 25) return { text: '極度の恐怖', cls: 'status-danger' };
-    if (value <= 40) return { text: '恐怖', cls: 'status-warning' };
-    if (value <= 60) return { text: '中立', cls: 'status-neutral' };
-    return { text: '強欲', cls: 'status-hot' };
+    if (value <= 25) return { text: 'みんな怖がっている', cls: 'status-danger' };
+    if (value <= 40) return { text: '不安気味', cls: 'status-warning' };
+    if (value <= 60) return { text: 'ふつう', cls: 'status-neutral' };
+    return { text: '楽観的', cls: 'status-hot' };
   }
   if (key === 'rsi') {
     if (value < 30) return { text: '売られすぎ', cls: 'status-danger' };
-    if (value < 40) return { text: '弱い', cls: 'status-warning' };
-    if (value < 60) return { text: '中立', cls: 'status-neutral' };
+    if (value < 40) return { text: 'やや弱い', cls: 'status-warning' };
+    if (value < 60) return { text: 'ふつう', cls: 'status-neutral' };
     if (value < 70) return { text: '強い', cls: 'status-safe' };
     return { text: '買われすぎ', cls: 'status-hot' };
   }
   if (key === 'credit_spread') {
     if (value >= 500) return { text: '危険', cls: 'status-danger' };
-    if (value >= 400) return { text: '警戒', cls: 'status-warning' };
-    if (value >= 300) return { text: '注意', cls: 'status-neutral' };
+    if (value >= 400) return { text: '注意', cls: 'status-warning' };
+    if (value >= 300) return { text: 'やや注意', cls: 'status-neutral' };
     return { text: '安定', cls: 'status-safe' };
   }
   if (key === 'ma_deviation') {
-    if (value <= -10) return { text: '大幅下方乖離', cls: 'status-danger' };
-    if (value <= -5) return { text: '下方乖離', cls: 'status-warning' };
-    if (value <= 5) return { text: '適正', cls: 'status-neutral' };
-    return { text: '上方乖離', cls: 'status-hot' };
+    if (value <= -10) return { text: 'かなり割安', cls: 'status-danger' };
+    if (value <= -5) return { text: 'やや割安', cls: 'status-warning' };
+    if (value <= 5) return { text: 'ふつう', cls: 'status-neutral' };
+    return { text: '割高', cls: 'status-hot' };
   }
   if (key === 'yield_curve') {
-    if (value < 0) return { text: '逆イールド', cls: 'status-danger' };
-    if (value < 0.5) return { text: 'フラット', cls: 'status-warning' };
-    return { text: '順イールド', cls: 'status-safe' };
+    if (value < 0) return { text: '景気後退サイン', cls: 'status-danger' };
+    if (value < 0.5) return { text: '微妙', cls: 'status-warning' };
+    return { text: '正常', cls: 'status-safe' };
   }
   return { text: '', cls: 'status-neutral' };
 }
@@ -105,21 +210,18 @@ function renderIndicators(indicators) {
   const grid = document.getElementById('indicatorGrid');
   if (!grid) return;
   grid.innerHTML = '';
-
   for (const [key, cfg] of Object.entries(INDICATOR_CONFIG)) {
     const data = indicators[key] || {};
     const value = data.value;
     const status = getIndicatorStatus(key, value);
     const displayVal = value != null ? (typeof value === 'number' ? value.toFixed(1) : value) : '--';
-    const sub = data.source ? `Source: ${data.source}` : (data.error ? data.error.substring(0, 30) : '');
-
     const card = document.createElement('div');
     card.className = 'indicator-card';
     card.innerHTML = `
       <div class="indicator-name">${cfg.name}</div>
-      <div class="indicator-value">${displayVal}${cfg.unit ? '<small style="font-size:0.5em;color:#64748b;margin-left:2px">' + cfg.unit + '</small>' : ''}</div>
+      <div class="indicator-value">${displayVal}</div>
       <span class="indicator-status ${status.cls}">${status.text}</span>
-      <div class="indicator-sub">${sub}</div>
+      <div class="indicator-desc">${cfg.desc}</div>
     `;
     grid.appendChild(card);
   }
@@ -133,26 +235,16 @@ function renderSignals(bottomSignals) {
   if (!section || !conditions) return;
 
   count.textContent = `${bottomSignals.met_count}/${bottomSignals.total_conditions}`;
-  title.textContent = bottomSignals.alert_level;
+  const labels = { 'セリングクライマックス': '大暴落の底（歴史的チャンス）', '底打ちシグナル': '底打ちの兆し', '条件未達': '底はまだ先' };
+  title.textContent = labels[bottomSignals.alert_level] || bottomSignals.alert_level;
 
-  if (bottomSignals.met_count > 0) {
-    section.style.display = 'block';
-  } else {
-    section.style.display = 'none';
-    return;
-  }
-
+  section.style.display = 'block';
   conditions.innerHTML = '';
   for (const [, cond] of Object.entries(bottomSignals.conditions)) {
     const item = document.createElement('div');
     item.className = 'condition-item';
-    const icon = cond.met ? '🔴' : '⚪';
-    const val = cond.value != null ? (typeof cond.value === 'number' ? cond.value.toFixed(1) : cond.value) : '--';
-    item.innerHTML = `
-      <span class="condition-icon">${icon}</span>
-      <span>${cond.label}</span>
-      <span class="condition-value">${val}</span>
-    `;
+    const icon = cond.met ? '✅' : '⬜';
+    item.innerHTML = `<span>${icon} ${cond.label}</span>`;
     conditions.appendChild(item);
   }
 }
@@ -161,19 +253,13 @@ function renderSectors(data) {
   const grid = document.getElementById('sectorGrid');
   if (!grid || !data.sectors) return;
   grid.innerHTML = '';
-
   for (const [name, info] of Object.entries(data.sectors)) {
     if (info.error) continue;
     const change = info.change_1d;
-    const card = document.createElement('div');
-    const cls = change >= 0 ? 'sector-positive' : 'sector-negative';
     const color = change >= 0 ? 'color-green' : 'color-red';
-    card.className = `sector-card ${cls}`;
-    card.innerHTML = `
-      <div class="sector-name">${name}</div>
-      <div class="sector-change ${color}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</div>
-      <div class="sector-ticker">${info.ticker} $${info.price}</div>
-    `;
+    const card = document.createElement('div');
+    card.className = 'sector-card-mini';
+    card.innerHTML = `<span>${name}</span><span class="${color}">${change >= 0 ? '+' : ''}${change.toFixed(1)}%</span>`;
     grid.appendChild(card);
   }
 }
@@ -182,21 +268,21 @@ function renderWatchlist(data) {
   const grid = document.getElementById('watchlistGrid');
   if (!grid) return;
   grid.innerHTML = '';
-
+  const labels = { SOXL: '半導体3倍', NVDA: 'NVIDIA', TQQQ: 'ナスダック3倍', XLE: 'エネルギー' };
   for (const [ticker, info] of Object.entries(data)) {
     if (info.error) continue;
     const dd = info.drawdown_pct;
-    const ddCls = dd <= -30 ? 'drawdown-deep' : dd <= -15 ? 'drawdown-moderate' : 'drawdown-mild';
+    const ddColor = dd <= -30 ? '#ef4444' : dd <= -15 ? '#f59e0b' : '#64748b';
     const card = document.createElement('div');
-    card.className = 'watchlist-card';
+    card.className = 'watch-card';
     card.innerHTML = `
-      <div class="watchlist-left">
-        <div class="wl-ticker">${ticker}</div>
-        <div class="wl-label">${info.label}</div>
+      <div class="watch-top">
+        <span class="watch-ticker">${ticker}</span>
+        <span class="watch-price">$${info.price}</span>
       </div>
-      <div class="watchlist-right">
-        <div class="wl-price">$${info.price}</div>
-        <div class="wl-drawdown ${ddCls}">${dd.toFixed(1)}% from high</div>
+      <div class="watch-bottom">
+        <span class="watch-label">${labels[ticker] || info.label}</span>
+        <span class="watch-dd" style="color:${ddColor}">高値から${dd.toFixed(0)}%</span>
       </div>
     `;
     grid.appendChild(card);
@@ -207,7 +293,6 @@ function renderGeo(data) {
   const grid = document.getElementById('geoGrid');
   if (!grid) return;
   grid.innerHTML = '';
-
   for (const [key, name] of Object.entries(GEO_NAMES)) {
     const info = data[key];
     if (!info || info.error) continue;
@@ -215,124 +300,15 @@ function renderGeo(data) {
     const color = change >= 0 ? 'color-green' : 'color-red';
     const prefix = key === 'usdjpy' ? '¥' : '$';
     const card = document.createElement('div');
-    card.className = 'geo-card';
-    card.innerHTML = `
-      <div class="geo-name">${name}</div>
-      <div class="geo-value">${prefix}${info.value.toFixed(2)}</div>
-      <div class="geo-change ${color}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</div>
-    `;
+    card.className = 'geo-card-mini';
+    card.innerHTML = `<span>${name}</span><span>${prefix}${info.value.toFixed(1)}</span><span class="${color}">${change >= 0 ? '+' : ''}${change.toFixed(1)}%</span>`;
     grid.appendChild(card);
   }
 }
 
 // ============================================================
-// Investment Advisor Panel
+// メイン更新
 // ============================================================
-
-const SIGNAL_STYLES = {
-  STRONG_BUY: { bg: '#991b1b', border: '#ef4444', text: '強い買い', icon: '🔥' },
-  BUY:        { bg: '#92400e', border: '#f59e0b', text: '買い',     icon: '📈' },
-  CONSIDER:   { bg: '#1e3a5f', border: '#3b82f6', text: '検討',     icon: '🔍' },
-  WATCH:      { bg: '#1a2332', border: '#475569', text: '監視',     icon: '👁' },
-  WAIT:       { bg: '#1a1a2e', border: '#334155', text: '待機',     icon: '⏳' },
-  UNKNOWN:    { bg: '#1a1a2e', border: '#334155', text: '不明',     icon: '❓' },
-};
-
-function renderAdvice(advice) {
-  const section = document.getElementById('adviceSection');
-  if (!section || !advice) return;
-  section.style.display = 'block';
-
-  // ヘッドライン
-  const headlineEl = document.getElementById('adviceHeadlineText');
-  const summaryEl = document.getElementById('adviceSummary');
-  const bottomNoteEl = document.getElementById('adviceBottomNote');
-  const headlineCard = document.getElementById('adviceHeadline');
-
-  headlineEl.textContent = advice.headline;
-  summaryEl.textContent = advice.summary;
-
-  // ヘッドラインの色（urgencyに応じて）
-  const topSector = Object.values(advice.sectors).sort((a, b) => {
-    const ord = { high: 0, medium: 1, low: 2, none: 3 };
-    return (ord[a.urgency] || 3) - (ord[b.urgency] || 3);
-  })[0];
-  const topStyle = SIGNAL_STYLES[topSector?.signal] || SIGNAL_STYLES.WAIT;
-  headlineCard.style.borderColor = topStyle.border;
-  headlineCard.style.background = `linear-gradient(135deg, ${topStyle.bg}, #0f172a)`;
-
-  if (advice.bottom_note) {
-    bottomNoteEl.style.display = 'block';
-    bottomNoteEl.textContent = advice.bottom_note;
-  } else {
-    bottomNoteEl.style.display = 'none';
-  }
-
-  // セクター別カード
-  const sectorsEl = document.getElementById('adviceSectors');
-  sectorsEl.innerHTML = '';
-
-  for (const [key, sector] of Object.entries(advice.sectors)) {
-    const style = SIGNAL_STYLES[sector.signal] || SIGNAL_STYLES.UNKNOWN;
-    const card = document.createElement('div');
-    card.className = 'advice-sector-card';
-    card.style.borderColor = style.border;
-
-    let targetsHtml = '';
-    if (sector.buy_targets) {
-      targetsHtml = '<div class="advice-targets-list">';
-      for (const [label, val] of Object.entries(sector.buy_targets)) {
-        const isCurrent = label === 'current';
-        targetsHtml += `<div class="target-row ${isCurrent ? 'target-current' : ''}">
-          <span class="target-label">${isCurrent ? '現在' : label}</span>
-          <span class="target-value">${val}</span>
-        </div>`;
-      }
-      targetsHtml += '</div>';
-    }
-
-    // SOXL追加情報（半導体セクター）
-    let soxlHtml = '';
-    if (sector.soxl) {
-      const soxlStyle = SIGNAL_STYLES[sector.soxl.signal] || SIGNAL_STYLES.WATCH;
-      soxlHtml = `<div class="soxl-box" style="border-color:${soxlStyle.border}">
-        <span class="soxl-signal">${soxlStyle.icon} SOXL: ${sector.soxl.action}</span>
-      </div>`;
-    }
-
-    card.innerHTML = `
-      <div class="advice-sector-header">
-        <span class="advice-sector-name">${style.icon} ${sector.sector}</span>
-        <span class="advice-signal-badge" style="background:${style.border}">${style.text}</span>
-      </div>
-      <div class="advice-action">${sector.action}</div>
-      <div class="advice-reason">${sector.reason}</div>
-      ${soxlHtml}
-      ${targetsHtml}
-    `;
-    sectorsEl.appendChild(card);
-  }
-
-  // 為替
-  const forexEl = document.getElementById('adviceForex');
-  if (advice.forex && advice.forex.usdjpy) {
-    forexEl.style.display = 'block';
-    const fx = advice.forex;
-    forexEl.innerHTML = `
-      <div class="forex-card">
-        <span class="forex-label">USD/JPY ¥${fx.usdjpy.toFixed(1)}</span>
-        <span class="forex-risk forex-risk-${fx.risk_level.toLowerCase()}">${fx.risk_level}</span>
-        <span class="forex-note">${fx.note}</span>
-        <span class="forex-opp">${fx.opportunity}</span>
-      </div>
-    `;
-  }
-}
-
-// ============================================================
-// Main refresh
-// ============================================================
-
 async function refreshData() {
   const btn = document.querySelector('.btn-refresh');
   if (btn) { btn.disabled = true; btn.textContent = '更新中...'; }
@@ -347,10 +323,15 @@ async function refreshData() {
     ]);
 
     const cs = scoreData.crash_score;
-    document.getElementById('scoreNumber').textContent = cs.score.toFixed(1);
-    document.getElementById('scoreLabel').textContent = cs.label;
-    document.getElementById('scoreLabel').className = `score-label color-${cs.color}`;
-    document.getElementById('scoreAction').textContent = cs.action;
+    document.getElementById('scoreNumber').textContent = cs.score.toFixed(0);
+
+    const statusLabels = { '極度の恐怖': 'みんな怖がっている', '恐怖': '不安な空気', '中立': 'ふつう', '強欲': '楽観的', '極度の強欲': '浮かれすぎ' };
+    document.getElementById('scoreLabel').textContent = statusLabels[cs.label] || cs.label;
+    document.getElementById('scoreLabel').className = `temp-status color-${cs.color}`;
+
+    const actionLabels = { '買い検討ゾーン': 'チャンスが近い', '注視': '注意して見守る', '通常運用': '急がなくてOK', '利確検討': '利益確定を考える', '売り検討ゾーン': '売り時かも' };
+    document.getElementById('scoreAction').textContent = actionLabels[cs.action] || cs.action;
+
     document.getElementById('updateTime').textContent = new Date(scoreData.timestamp).toLocaleString('ja-JP');
 
     updateGauge(cs.score, cs.color);
@@ -360,23 +341,18 @@ async function refreshData() {
     renderWatchlist(watchData);
     renderGeo(geoData);
 
-    // Investment Advisor
     if (adviceData && adviceData.advice) {
-      renderAdvice(adviceData.advice);
+      renderToday(adviceData.advice);
+      renderAdviceSectors(adviceData.advice);
     }
   } catch (e) {
     console.error('Data fetch error:', e);
-    document.getElementById('updateTime').textContent = 'エラー: ' + e.message;
+    document.getElementById('todayHeadline').textContent = '読み込みに失敗しました。更新ボタンを押してください。';
+    document.getElementById('updateTime').textContent = 'エラー';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '更新'; }
   }
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  initGauge();
-  refreshData();
-});
-
-window.addEventListener('resize', () => {
-  if (gaugeChart) gaugeChart.resize();
-});
+window.addEventListener('DOMContentLoaded', () => { initGauge(); refreshData(); });
+window.addEventListener('resize', () => { if (gaugeChart) gaugeChart.resize(); });

@@ -23,6 +23,15 @@ STRATEGY = {
     ],
 }
 
+# 約定ラグ情報（注文してから実際に買えるまでの日数）
+SETTLEMENT_LAG = {
+    "emaxis_sp500": {"name": "eMAXIS Slim S&P500", "days": 2, "note": "注文翌営業日の基準価額で約定、受渡は約定+2営業日"},
+    "emaxis_allcountry": {"name": "eMAXIS Slim 全世界株式", "days": 2, "note": "注文翌営業日の基準価額で約定"},
+    "xle": {"name": "XLE（エネルギーETF）", "days": 1, "note": "海外ETF。注文当日〜翌営業日に約定"},
+    "nvda": {"name": "NVIDIA", "days": 1, "note": "米国個別株。注文当日〜翌営業日に約定"},
+    "soxl": {"name": "SOXL", "days": 1, "note": "米国ETF。注文当日〜翌営業日に約定"},
+}
+
 
 # ============================================================
 # セクター別シグナル判定
@@ -391,6 +400,7 @@ def generate_advice(
         },
         "forex": forex,
         "strategy_params": STRATEGY,
+        "settlement_lag": SETTLEMENT_LAG,
         "updated_at": datetime.now().isoformat(),
     }
 
