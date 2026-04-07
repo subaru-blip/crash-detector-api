@@ -12,14 +12,20 @@ from datetime import datetime
 # 戦略パラメータ（ダッシュボード上で表示・将来的に編集可能にする）
 # ============================================================
 STRATEGY = {
-    "total_budget": 2970000,  # 297万
-    "nisa_budget": 2400000,   # 240万
-    "tokutei_budget": 570000, # 57万
+    "total_budget": 2970000,  # 297万（成長投資枠 + 特定口座）
+    "nisa_growth_budget": 2400000,   # 成長投資枠 240万（SBI証券・新NISA）
+    "nisa_tsumitate_budget": 1200000,  # つみたて投資枠 120万（SBI証券・毎月10万で自動積立済み）
+    "tokutei_budget": 570000, # 特定口座 57万（楽天証券）
+    "brokers": {
+        "nisa": "SBI証券（新NISA）",
+        "tokutei": "楽天証券（特定口座）",
+    },
+    "notes": "つみたて投資枠120万は毎月10万の自動積立で使用済み。ツールで管理するのは成長投資枠+特定口座の297万",
     "tranches": [
-        {"label": "1回目", "amount": 600000, "status": "pending"},
-        {"label": "2回目", "amount": 600000, "status": "pending"},
-        {"label": "3回目", "amount": 600000, "status": "pending"},
-        {"label": "4回目", "amount": 600000, "status": "pending"},
+        {"label": "1回目", "amount": 600000, "account": "nisa", "status": "pending"},
+        {"label": "2回目", "amount": 600000, "account": "nisa", "status": "pending"},
+        {"label": "3回目", "amount": 600000, "account": "nisa", "status": "pending"},
+        {"label": "4回目", "amount": 600000, "account": "nisa", "status": "pending"},
     ],
 }
 
@@ -52,12 +58,12 @@ def evaluate_energy(wti_price: float, xle_price: float, xle_high_52w: float) -> 
     # 判定ロジック
     if wti_price <= 80:
         signal = "STRONG_BUY"
-        action = f"楽天証券でXLE（エネルギーETF）を60万円分、今すぐ注文してください"
+        action = f"SBI証券でXLE（エネルギーETF）を60万円分、今すぐ注文してください"
         urgency = "high"
         reason = f"原油が${wti_price}まで下がりました。停戦後のバーゲン価格です。注文から翌営業日に買えます"
     elif wti_price <= 90:
         signal = "BUY"
-        action = f"楽天証券でXLE（エネルギーETF）を60万円分、今週中に注文してください"
+        action = f"SBI証券でXLE（エネルギーETF）を60万円分、今週中に注文してください"
         urgency = "medium"
         reason = f"原油が${wti_price}に調整中。この水準なら買っても大丈夫です"
     elif xle_from_high <= -20:
@@ -118,12 +124,12 @@ def evaluate_semiconductor(
 
     if nvda_from_high <= -40:
         signal = "STRONG_BUY"
-        action = f"楽天証券でNVIDIA株を25万円分、今すぐ注文してください"
+        action = f"楽天証券（特定口座）でNVIDIA株を25万円分、今すぐ注文してください"
         urgency = "high"
         reason = f"NVIDIAが${nvda_price}（高値から{nvda_from_high:.0f}%下落）。AIの需要は変わっていないのに異常な安さです。翌営業日に買えます"
     elif nvda_from_high <= -30:
         signal = "BUY"
-        action = f"楽天証券でNVIDIA株を25万円分、今週中に注文してください"
+        action = f"楽天証券（特定口座）でNVIDIA株を25万円分、今週中に注文してください"
         urgency = "medium"
         reason = f"NVIDIAが${nvda_price}（高値から{nvda_from_high:.0f}%下落）。決算は過去最高なのに安くなっています"
     elif nvda_from_high <= -20:
@@ -196,19 +202,19 @@ def evaluate_broad_market(
     # 段階判定
     if crash_score <= 20 and sp500_from_high <= -15:
         signal = "STRONG_BUY"
-        action = "楽天証券でeMAXIS Slim S&P500を残り全額分、今すぐ注文してください"
+        action = "SBI証券（NISA）でeMAXIS Slim S&P500を残り全額分、今すぐ注文してください"
         urgency = "high"
         tranche = "4回目（残り全額）"
         reason = f"市場の恐怖度が極限（スコア{crash_score}）で、S&P500も{sp500_from_high:.0f}%下落。歴史的な買い場です。注文から2営業日で購入完了します"
     elif crash_score <= 30 and sp500_from_high <= -10:
         signal = "BUY"
-        action = "楽天証券でeMAXIS Slim S&P500を60万円分、今週中に注文してください"
+        action = "SBI証券（NISA）でeMAXIS Slim S&P500を60万円分、今週中に注文してください"
         urgency = "medium"
         tranche = "2〜3回目"
         reason = f"市場が怖がっている（スコア{crash_score}）＋株価も{sp500_from_high:.0f}%下落。この組み合わせは買い時です"
     elif sp500_from_high <= -10:
         signal = "BUY"
-        action = "楽天証券でeMAXIS Slim S&P500を60万円分、今週中に注文してください（NISA 1回目）"
+        action = "SBI証券（NISA）でeMAXIS Slim S&P500を60万円分、今週中に注文してください（NISA 1回目）"
         urgency = "medium"
         tranche = "1回目"
         reason = f"S&P500が高値から{sp500_from_high:.0f}%下落。4回に分けて買う1回目です。注文から2営業日で購入完了します"
