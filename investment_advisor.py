@@ -22,7 +22,7 @@ STRATEGY = {
     },
     "notes": "つみたて投資枠120万は毎月10万の自動積立で使用済み。ツールで管理するのは成長投資枠+特定口座の297万",
     "tranches": [
-        {"label": "1回目", "amount": 600000, "account": "nisa", "status": "pending"},
+        {"label": "1回目", "amount": 600000, "account": "nisa", "status": "done", "date": "2026-04-07", "ticker": "eMAXIS Slim S&P500"},
         {"label": "2回目", "amount": 600000, "account": "nisa", "status": "pending"},
         {"label": "3回目", "amount": 600000, "account": "nisa", "status": "pending"},
         {"label": "4回目", "amount": 600000, "account": "nisa", "status": "pending"},
