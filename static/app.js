@@ -99,6 +99,7 @@ function renderAdviceSectors(advice) {
     energy: 'エネルギー（石油・ガス）',
     semiconductor: '半導体（NVIDIA・AI）',
     broad_market: '市場全体（S&P500）',
+    gold: 'ゴールド（金）',
   };
 
   for (const [key, sector] of Object.entries(advice.sectors)) {
@@ -158,8 +159,61 @@ function getLagInfo(sectorKey) {
     energy: { days: 1, note: '海外ETF（XLE）は翌営業日に約定' },
     semiconductor: { days: 1, note: '米国株（NVIDIA）は翌営業日に約定' },
     broad_market: { days: 2, note: '投資信託（eMAXIS Slim）は2営業日後に約定' },
+    gold: { days: 2, note: 'ゴールドETF（425A）は2営業日後に約定' },
   };
   return map[sectorKey];
+}
+
+// ============================================================
+// 売りシグナルパネル
+// ============================================================
+
+const SELL_STYLES = {
+  SELL_STRONG: { color: '#ef4444', bg: 'rgba(239,68,68,0.15)', text: '利確を強く推奨', border: '#ef4444' },
+  SELL_PARTIAL: { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', text: '一部利確を検討', border: '#f59e0b' },
+  WATCH:       { color: '#3b82f6', bg: 'rgba(59,130,246,0.10)', text: '利確の準備', border: '#3b82f6' },
+  HOLD:        { color: '#22c55e', bg: 'rgba(34,197,94,0.08)', text: '保有継続', border: '#22c55e' },
+};
+
+function renderSellSignals(sellData) {
+  const section = document.getElementById('sellSection');
+  if (!section || !sellData) return;
+  section.style.display = 'block';
+
+  const style = SELL_STYLES[sellData.sell_level] || SELL_STYLES.HOLD;
+
+  const card = document.getElementById('sellCard');
+  card.style.borderColor = style.border;
+  card.style.background = `linear-gradient(135deg, ${style.bg}, var(--bg-card))`;
+
+  document.getElementById('sellBadge').textContent = style.text;
+  document.getElementById('sellBadge').style.background = style.color;
+  document.getElementById('sellHeadline').textContent = sellData.headline;
+  document.getElementById('sellAction').textContent = sellData.action;
+
+  // 条件リスト
+  const list = document.getElementById('sellConditions');
+  list.innerHTML = '';
+  for (const sig of sellData.signals) {
+    const icon = sig.met ? (sig.severity === 'high' ? '🔴' : '🟡') : '⚪';
+    const item = document.createElement('div');
+    item.className = 'sell-condition-item';
+    item.innerHTML = `<span>${icon} ${sig.condition}</span><span class="sell-detail">${sig.detail}</span>`;
+    list.appendChild(item);
+  }
+
+  // カウント
+  document.getElementById('sellCount').textContent = `${sellData.met_count}/${sellData.total_conditions}`;
+
+  // ゴールド個別売りシグナル
+  const goldSell = document.getElementById('goldSellNote');
+  if (sellData.gold_sell && goldSell) {
+    goldSell.style.display = 'block';
+    const gs = sellData.gold_sell;
+    goldSell.innerHTML = `<span class="sa-badge" style="background:${gs.signal === 'SELL_PARTIAL' ? '#f59e0b' : '#3b82f6'}">${gs.signal === 'SELL_PARTIAL' ? '利確' : '準備'}</span> ${gs.action}`;
+  } else if (goldSell) {
+    goldSell.style.display = 'none';
+  }
 }
 
 // ============================================================
@@ -268,7 +322,7 @@ function renderWatchlist(data) {
   const grid = document.getElementById('watchlistGrid');
   if (!grid) return;
   grid.innerHTML = '';
-  const labels = { SOXL: '半導体3倍', NVDA: 'NVIDIA', TQQQ: 'ナスダック3倍', XLE: 'エネルギー' };
+  const labels = { SOXL: '半導体3倍', NVDA: 'NVIDIA', TQQQ: 'ナスダック3倍', XLE: 'エネルギー', GLD: 'ゴールド' };
   for (const [ticker, info] of Object.entries(data)) {
     if (info.error) continue;
     const dd = info.drawdown_pct;
@@ -344,6 +398,7 @@ async function refreshData() {
     if (adviceData && adviceData.advice) {
       renderToday(adviceData.advice);
       renderAdviceSectors(adviceData.advice);
+      renderSellSignals(adviceData.advice.sell_signals);
       loadBudget(adviceData.advice.strategy_params);
     }
   } catch (e) {
