@@ -24,7 +24,8 @@ STRATEGY = {
     "tranches": [
         {"label": "1回目", "amount": 600000, "account": "nisa", "status": "done", "date": "2026-04-07", "ticker": "eMAXIS Slim S&P500"},
         {"label": "2回目", "amount": 600000, "account": "nisa", "status": "pending"},
-        {"label": "3回目", "amount": 600000, "account": "nisa", "status": "pending"},
+        {"label": "3回目", "amount": 300000, "account": "nisa", "status": "pending", "note": "S&P500 or オルカン"},
+        {"label": "ゴールド枠", "amount": 300000, "account": "nisa", "status": "pending", "ticker": "グローバルX ゴールドETF(425A)"},
         {"label": "4回目", "amount": 600000, "account": "nisa", "status": "pending"},
     ],
 }
@@ -291,6 +292,262 @@ def evaluate_broad_market(
     }
 
 
+def evaluate_gold(gold_price: float, gold_high_52w: float, crash_score: float) -> dict:
+    """
+    ゴールドセクターの買い/待ちシグナルを判定
+
+    清水さんの読み: 金はこれから上がる（中央銀行買い、脱ドル化、地政学リスク）
+    J.P.モルガン予測: 2026年末6,300ドル、ゴールドマン: 5,400ドル
+    """
+    if gold_price is None:
+        return _unknown("ゴールド", "データ取得失敗")
+
+    gold_from_high = ((gold_price - gold_high_52w) / gold_high_52w) * 100 if gold_high_52w else 0
+
+    # 買い判定
+    if gold_from_high <= -20:
+        signal = "STRONG_BUY"
+        action = "SBI証券（NISA）でゴールドETF（425A）を30万円分、今すぐ注文してください"
+        urgency = "high"
+        reason = f"金が${gold_price}（高値から{gold_from_high:.0f}%下落）。中央銀行の買いは続いているのに異常な安さです"
+    elif gold_from_high <= -10:
+        signal = "BUY"
+        action = "SBI証券（NISA）でゴールドETF（425A）を30万円分、今週中に注文してください"
+        urgency = "medium"
+        reason = f"金が${gold_price}（高値から{gold_from_high:.0f}%下落）。調整局面は買い場です"
+    elif gold_from_high <= -5 and crash_score is not None and crash_score <= 30:
+        signal = "BUY"
+        action = "SBI証券（NISA）でゴールドETF（425A）を30万円分、今週中に注文してください"
+        urgency = "medium"
+        reason = f"金${gold_price}が調整中 + 市場全体が恐怖圏（スコア{crash_score}）。安全資産の金を仕込むタイミングです"
+    elif gold_price >= 7000:
+        signal = "WAIT"
+        action = "ゴールドは高値圏です。今は買わないでください"
+        urgency = "none"
+        reason = f"${gold_price}は過熱水準。利確を検討する局面です"
+    elif gold_from_high >= -3:
+        signal = "WAIT"
+        action = "ゴールドはまだ買わないでください"
+        urgency = "none"
+        reason = f"${gold_price}は高値圏。5%以上の調整を待ちましょう（${gold_high_52w * 0.95:.0f}以下）"
+    else:
+        signal = "WAIT"
+        action = "ゴールドはまだ買わないでください"
+        urgency = "none"
+        reason = f"${gold_price}は中途半端な水準。もう少し下がったら買い時です"
+
+    return {
+        "sector": "ゴールド",
+        "signal": signal,
+        "action": action,
+        "urgency": urgency,
+        "reason": reason,
+        "data": {
+            "gold_price": gold_price,
+            "gold_high_52w": gold_high_52w,
+            "gold_from_high_pct": round(gold_from_high, 1),
+        },
+        "buy_targets": {
+            "best": f"金 ${gold_high_52w * 0.80:.0f}以下（高値比-20%）",
+            "good": f"金 ${gold_high_52w * 0.90:.0f}以下（高値比-10%）",
+            "consider": f"金 ${gold_high_52w * 0.95:.0f}以下（高値比-5%）",
+            "current": f"金 ${gold_price}（高値比{gold_from_high:.0f}%）",
+        },
+    }
+
+
+# ============================================================
+# 売りシグナル判定（成長投資枠の利確タイミング）
+# ============================================================
+
+def evaluate_sell_signals(
+    crash_score: float,
+    fear_greed: float,
+    vix: float,
+    rsi: float,
+    sp500_price: float,
+    sp500_high: float,
+    gold_price: float,
+    gold_high_52w: float,
+) -> dict:
+    """
+    保有ポジションの売りタイミングを判定
+
+    NISA成長投資枠は非課税なので利益を最大化したいが、
+    暴落で利益を吹き飛ばすリスクも避けたい。
+    段階的に利確シグナルを出す。
+    """
+    signals = []
+    sell_level = "HOLD"  # HOLD / WATCH / SELL_PARTIAL / SELL_STRONG
+
+    # --- 条件1: 極度の強欲（Crash Score 80+）---
+    if crash_score is not None and crash_score >= 80:
+        signals.append({
+            "condition": "極度の強欲",
+            "met": True,
+            "detail": f"Crash Score {crash_score} → 市場が過熱しています",
+            "severity": "high",
+        })
+    elif crash_score is not None and crash_score >= 70:
+        signals.append({
+            "condition": "強欲圏",
+            "met": True,
+            "detail": f"Crash Score {crash_score} → 利確準備を始めてください",
+            "severity": "medium",
+        })
+    else:
+        signals.append({
+            "condition": "市場の過熱",
+            "met": False,
+            "detail": f"Crash Score {crash_score or 'N/A'} → まだ過熱していません",
+            "severity": "none",
+        })
+
+    # --- 条件2: Fear & Greed 80+（極度の強欲）---
+    if fear_greed is not None and fear_greed >= 80:
+        signals.append({
+            "condition": "Fear&Greed 極度の強欲",
+            "met": True,
+            "detail": f"Fear&Greed {fear_greed} → みんなが欲張っています。反転に注意",
+            "severity": "high",
+        })
+    elif fear_greed is not None and fear_greed >= 70:
+        signals.append({
+            "condition": "Fear&Greed 強欲",
+            "met": True,
+            "detail": f"Fear&Greed {fear_greed} → 楽観が広がっています",
+            "severity": "medium",
+        })
+    else:
+        signals.append({
+            "condition": "Fear&Greed過熱",
+            "met": False,
+            "detail": f"Fear&Greed {fear_greed or 'N/A'} → まだ楽観的すぎません",
+            "severity": "none",
+        })
+
+    # --- 条件3: VIX極端に低い（12以下 = 油断）---
+    if vix is not None and vix <= 12:
+        signals.append({
+            "condition": "VIX低すぎ（油断）",
+            "met": True,
+            "detail": f"VIX {vix} → 市場が油断しきっています。暴落の前兆かも",
+            "severity": "high",
+        })
+    elif vix is not None and vix <= 15:
+        signals.append({
+            "condition": "VIX低め",
+            "met": True,
+            "detail": f"VIX {vix} → リスク認識が低い状態です",
+            "severity": "medium",
+        })
+    else:
+        signals.append({
+            "condition": "VIX油断",
+            "met": False,
+            "detail": f"VIX {vix or 'N/A'} → 市場は適度に警戒しています",
+            "severity": "none",
+        })
+
+    # --- 条件4: RSI過熱（75+）---
+    if rsi is not None and rsi >= 75:
+        signals.append({
+            "condition": "RSI買われすぎ",
+            "met": True,
+            "detail": f"RSI {rsi} → 買われすぎの水準です",
+            "severity": "high",
+        })
+    elif rsi is not None and rsi >= 70:
+        signals.append({
+            "condition": "RSIやや過熱",
+            "met": True,
+            "detail": f"RSI {rsi} → やや買われすぎです",
+            "severity": "medium",
+        })
+    else:
+        signals.append({
+            "condition": "RSI過熱",
+            "met": False,
+            "detail": f"RSI {rsi or 'N/A'} → まだ買われすぎではありません",
+            "severity": "none",
+        })
+
+    # --- 条件5: S&P500が高値更新圏 ---
+    sp500_from_high = None
+    if sp500_price is not None and sp500_high is not None and sp500_high > 0:
+        sp500_from_high = ((sp500_price - sp500_high) / sp500_high) * 100
+        if sp500_from_high >= -1:
+            signals.append({
+                "condition": "S&P500高値圏",
+                "met": True,
+                "detail": f"S&P500 {sp500_price}（高値比{sp500_from_high:.1f}%）→ 最高値付近です",
+                "severity": "medium",
+            })
+        else:
+            signals.append({
+                "condition": "S&P500高値圏",
+                "met": False,
+                "detail": f"S&P500 {sp500_price}（高値比{sp500_from_high:.1f}%）→ まだ高値圏ではありません",
+                "severity": "none",
+            })
+
+    # --- 売りレベル判定 ---
+    high_count = sum(1 for s in signals if s["met"] and s["severity"] == "high")
+    medium_count = sum(1 for s in signals if s["met"] and s["severity"] == "medium")
+    met_count = sum(1 for s in signals if s["met"])
+
+    if high_count >= 3:
+        sell_level = "SELL_STRONG"
+        headline = "利確を強く推奨します。複数の過熱シグナルが同時発動しています"
+        action = "S&P500ポジションの50〜70%を利確してください。残りは様子見"
+    elif high_count >= 2 or (high_count >= 1 and medium_count >= 2):
+        sell_level = "SELL_PARTIAL"
+        headline = "一部利確を検討してください"
+        action = "S&P500ポジションの30〜50%の利確を検討。特に含み益が大きいものから"
+    elif met_count >= 2:
+        sell_level = "WATCH"
+        headline = "利確の準備を始めてください"
+        action = "まだ売る必要はありませんが、条件がさらに揃えば利確です。売り注文の準備だけしておいてください"
+    else:
+        sell_level = "HOLD"
+        headline = "売る必要はありません。保有継続してください"
+        action = "市場はまだ過熱していません。そのまま持ち続けてください"
+
+    # --- ゴールド売りシグナル（個別）---
+    gold_sell = None
+    if gold_price is not None and gold_high_52w is not None:
+        gold_from_high = ((gold_price - gold_high_52w) / gold_high_52w) * 100
+        if gold_price >= 7000:
+            gold_sell = {
+                "signal": "SELL_PARTIAL",
+                "action": f"金${gold_price}が$7,000超え。ゴールドETFの半分を利確してください",
+                "reason": "歴史的高値圏。利益確定して安全に",
+            }
+        elif gold_price >= 6300 and rsi is not None and rsi >= 70:
+            gold_sell = {
+                "signal": "WATCH",
+                "action": f"金${gold_price}がJ.P.モルガン目標に接近。利確準備を",
+                "reason": "アナリスト予測の上限付近。過熱していれば利確検討",
+            }
+
+    return {
+        "sell_level": sell_level,
+        "headline": headline,
+        "action": action,
+        "signals": signals,
+        "met_count": met_count,
+        "total_conditions": len(signals),
+        "gold_sell": gold_sell,
+        "data": {
+            "crash_score": crash_score,
+            "fear_greed": fear_greed,
+            "vix": vix,
+            "rsi": rsi,
+            "sp500_from_high_pct": round(sp500_from_high, 1) if sp500_from_high is not None else None,
+        },
+    }
+
+
 def evaluate_forex(usdjpy: float) -> dict:
     """為替リスク評価"""
     if usdjpy is None:
@@ -362,56 +619,84 @@ def generate_advice(
     soxl_data = watchlist.get("SOXL", {})
     soxl_price = soxl_data.get("price")
 
-    # S&P500取得（MA deviationのprice/maから推定、またはRSIのtickerから）
+    # ゴールド取得
+    gold_price = geopolitical.get("gold", {}).get("value")
+    gld_data = watchlist.get("GLD", {})
+    gold_high_52w = gld_data.get("high_52w")
+    # GLD ETF価格を金先物価格に概算変換（GLD ≈ 金価格/10）
+    if gold_high_52w and gold_price:
+        # geopoliticalのgoldが先物価格（$4000台）、GLDはETF価格（$400台）
+        # 52週高値比較は先物ベースで行う
+        gold_high_52w_futures = gold_high_52w * 10  # GLD→先物概算
+    else:
+        gold_high_52w_futures = gold_price * 1.15 if gold_price else None  # フォールバック
+
+    # S&P500取得
     sp500_price = None
     sp500_high = None
     ma_data = indicators.get("ma_deviation", {})
     if ma_data.get("price"):
         sp500_price = ma_data["price"]
-        # 52週高値はwatchlistにないので、MA + 乖離率から推定
-        # 正確にはSPY 1年データが必要だが、ここでは概算
-    # watchlistにSPYを追加するのが理想だが、既存データで対応
-    # 仮に7002（2026/1/28の高値）をハードコード → 将来的にAPI化
     sp500_high = 7002  # TODO: yfinanceから動的取得に変更
 
-    # Fear & Greed / VIX
+    # Fear & Greed / VIX / RSI
     fear_greed = indicators.get("fear_greed", {}).get("value")
     vix = indicators.get("vix", {}).get("value")
+    rsi = indicators.get("rsi", {}).get("value")
 
     # USD/JPY
     usdjpy = geopolitical.get("usdjpy", {}).get("value")
 
-    # セクター別評価
+    # セクター別評価（買い）
     energy = evaluate_energy(wti, xle_price, xle_high)
     semi = evaluate_semiconductor(nvda_price, nvda_high, soxl_price, crash_score)
     broad = evaluate_broad_market(crash_score, sp500_price, sp500_high, fear_greed, vix)
+    gold = evaluate_gold(gold_price, gold_high_52w_futures, crash_score)
     forex = evaluate_forex(usdjpy)
 
-    # 最も緊急度の高いアクションをヘッドラインに（COMPLETE除外）
-    all_sectors = [energy, semi, broad]
-    active_sectors = [s for s in all_sectors if s.get("signal") != "COMPLETE"]
-    urgency_order = {"high": 0, "medium": 1, "low": 2, "none": 3}
-    active_sectors.sort(key=lambda s: urgency_order.get(s.get("urgency", "none"), 3))
+    # 売りシグナル判定
+    sell = evaluate_sell_signals(
+        crash_score=crash_score,
+        fear_greed=fear_greed,
+        vix=vix,
+        rsi=rsi,
+        sp500_price=sp500_price,
+        sp500_high=sp500_high,
+        gold_price=gold_price,
+        gold_high_52w=gold_high_52w_futures,
+    )
 
-    if active_sectors:
-        top = active_sectors[0]
-        if top["urgency"] == "high":
-            headline = f"今すぐ注文してください → {top['action']}"
-        elif top["urgency"] == "medium":
-            headline = f"今週中に注文を検討 → {top['action']}"
-        elif top["urgency"] == "low":
-            headline = f"まだ買わないでください。もう少しで条件達成です"
-        else:
-            headline = "まだ買わないでください。条件が揃うまで待ちましょう"
+    # 最も緊急度の高いアクションをヘッドラインに（COMPLETE除外 + 売り優先）
+    if sell["sell_level"] in ("SELL_STRONG", "SELL_PARTIAL"):
+        headline = f"利確を検討してください → {sell['action']}"
     else:
-        headline = "全セクター投入完了。売りタイミングの判定に注目してください"
+        all_sectors = [energy, semi, broad, gold]
+        active_sectors = [s for s in all_sectors if s.get("signal") != "COMPLETE"]
+        urgency_order = {"high": 0, "medium": 1, "low": 2, "none": 3}
+        active_sectors.sort(key=lambda s: urgency_order.get(s.get("urgency", "none"), 3))
+
+        if active_sectors:
+            top = active_sectors[0]
+            if top["urgency"] == "high":
+                headline = f"今すぐ注文してください → {top['action']}"
+            elif top["urgency"] == "medium":
+                headline = f"今週中に注文を検討 → {top['action']}"
+            elif top["urgency"] == "low":
+                headline = f"まだ買わないでください。もう少しで条件達成です"
+            else:
+                headline = "まだ買わないでください。条件が揃うまで待ちましょう"
+        else:
+            headline = "全セクター投入完了。売りタイミングの判定に注目してください"
 
     # 全体サマリー
-    active_signals = [s for s in all_sectors if s["signal"] in ("BUY", "STRONG_BUY")]
-    complete_signals = [s for s in all_sectors if s["signal"] == "COMPLETE"]
-    if active_signals:
+    all_buy_sectors = [energy, semi, broad, gold]
+    active_signals = [s for s in all_buy_sectors if s["signal"] in ("BUY", "STRONG_BUY")]
+    complete_signals = [s for s in all_buy_sectors if s["signal"] == "COMPLETE"]
+    if sell["sell_level"] in ("SELL_STRONG", "SELL_PARTIAL"):
+        summary = f"売りシグナル発動中（{sell['met_count']}/{sell['total_conditions']}条件成立）"
+    elif active_signals:
         summary = f"{len(active_signals)}セクターで買いシグナル発動中"
-    elif any(s["signal"] == "CONSIDER" for s in all_sectors):
+    elif any(s["signal"] == "CONSIDER" for s in all_buy_sectors):
         summary = "一部セクターで買い検討圏。条件が整えば投入"
     elif complete_signals:
         done = _count_done_tranches()
@@ -440,7 +725,9 @@ def generate_advice(
             "energy": energy,
             "semiconductor": semi,
             "broad_market": broad,
+            "gold": gold,
         },
+        "sell_signals": sell,
         "forex": forex,
         "strategy_params": STRATEGY,
         "settlement_lag": SETTLEMENT_LAG,

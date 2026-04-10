@@ -293,6 +293,75 @@ body {
   font-size: 0.75rem;
 }
 
+/* ===== 売りシグナル ===== */
+.sell-section { margin-bottom: 16px; }
+
+.sell-card {
+  background: var(--bg-card);
+  border: 2px solid var(--accent-green);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.sell-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.sell-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.sell-headline {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.sell-action {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.sell-conditions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sell-condition-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.03);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+}
+
+.sell-detail {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding-left: 22px;
+}
+
+.sell-gold-note {
+  margin-top: 10px;
+  padding: 10px;
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.25);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  color: var(--accent-yellow);
+}
+
 /* ===== 資金状況 ===== */
 .budget-section { margin-bottom: 16px; }
 

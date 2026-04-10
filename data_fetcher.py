@@ -448,6 +448,7 @@ WATCHLIST = {
     "NVDA": "NVIDIA",
     "TQQQ": "ナスダック3倍レバ",
     "XLE": "エネルギーETF",
+    "GLD": "ゴールドETF",
 }
 
 
