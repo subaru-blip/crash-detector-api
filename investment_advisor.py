@@ -631,13 +631,24 @@ def generate_advice(
     else:
         gold_high_52w_futures = gold_price * 1.15 if gold_price else None  # フォールバック
 
-    # S&P500取得
+    # S&P500取得（SPY ETFベースで統一）
     sp500_price = None
     sp500_high = None
     ma_data = indicators.get("ma_deviation", {})
     if ma_data.get("price"):
         sp500_price = ma_data["price"]
-    sp500_high = 7002  # TODO: yfinanceから動的取得に変更
+    # SPYの52週高値をyfinanceから動的取得
+    try:
+        import yfinance as yf
+        spy = yf.Ticker("SPY")
+        spy_hist = spy.history(period="1y")
+        if not spy_hist.empty:
+            sp500_high = float(spy_hist["Close"].max())
+    except Exception:
+        pass
+    # フォールバック: 現在価格から推定
+    if sp500_high is None and sp500_price is not None:
+        sp500_high = sp500_price * 1.15
 
     # Fear & Greed / VIX / RSI
     fear_greed = indicators.get("fear_greed", {}).get("value")
