@@ -8,10 +8,10 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from data_fetcher import (
     fetch_vix,
@@ -53,8 +53,10 @@ if STATIC_DIR.exists():
 
 
 @app.api_route("/", methods=["GET", "HEAD"])
-def root():
+def root(request: Request):
     """ダッシュボードHTMLを返す（staticフォルダがあれば）"""
+    if request.method == "HEAD":
+        return Response(status_code=200)
     index = STATIC_DIR / "index.html"
     if index.exists():
         return FileResponse(str(index))
@@ -205,7 +207,8 @@ def get_history():
     return get_investment_history()
 
 
-@app.get("/api/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 def health():
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
