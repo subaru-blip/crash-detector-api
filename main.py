@@ -52,7 +52,7 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     """ダッシュボードHTMLを返す（staticフォルダがあれば）"""
     index = STATIC_DIR / "index.html"
