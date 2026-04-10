@@ -213,6 +213,17 @@ def health():
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
 
+@app.post("/api/cache/clear")
+def clear_cache():
+    """キャッシュを全クリアして最新データで再取得させる"""
+    from data_fetcher import get_db
+    conn = get_db()
+    conn.execute("DELETE FROM cache")
+    conn.commit()
+    conn.close()
+    return {"status": "cleared", "timestamp": datetime.now().isoformat()}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
