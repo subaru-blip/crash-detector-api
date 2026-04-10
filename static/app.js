@@ -17,6 +17,7 @@ const SIGNAL_STYLES = {
   CONSIDER:   { color: '#3b82f6', bg: 'rgba(59,130,246,0.15)', text: 'まだ買わない',  icon: '🔵' },
   WATCH:      { color: '#64748b', bg: 'rgba(100,116,139,0.10)', text: 'まだ買わない', icon: '⚪' },
   WAIT:       { color: '#475569', bg: 'rgba(71,85,105,0.10)',  text: 'まだ買わない',  icon: '⚪' },
+  COMPLETE:   { color: '#22c55e', bg: 'rgba(34,197,94,0.15)',  text: '✅ 投入済み',   icon: '✅' },
   UNKNOWN:    { color: '#475569', bg: 'rgba(71,85,105,0.10)',  text: '判定できず',    icon: '❓' },
 };
 
@@ -123,6 +124,20 @@ function renderAdviceSectors(advice) {
       soxlHtml = `<div class="soxl-note" style="border-color:${sStyle.color}">${sStyle.icon} ${sector.soxl.action}</div>`;
     }
 
+    // トランシェ消化状況（広域市場のみ）
+    let trancheHtml = '';
+    if (key === 'broad_market' && advice.strategy_params?.tranches) {
+      const tranches = advice.strategy_params.tranches;
+      const items = tranches.map(t => {
+        if (t.status === 'done') {
+          return `<span class="tranche-item tranche-done">✅ ${t.label}（${t.ticker || 'S&P500'}・${(t.amount/10000).toFixed(0)}万）${t.date || ''}</span>`;
+        } else {
+          return `<span class="tranche-item tranche-pending">⬜ ${t.label}（${(t.amount/10000).toFixed(0)}万・待機中）</span>`;
+        }
+      }).join('');
+      trancheHtml = `<div class="tranche-status">${items}</div>`;
+    }
+
     card.innerHTML = `
       <div class="sa-header">
         <span class="sa-name">${sectorNames[key] || sector.sector}</span>
@@ -130,6 +145,7 @@ function renderAdviceSectors(advice) {
       </div>
       <div class="sa-action">${sector.action}</div>
       <div class="sa-reason">${sector.reason}</div>
+      ${trancheHtml}
       ${soxlHtml}
       ${lagHtml}
     `;

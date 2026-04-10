@@ -185,6 +185,19 @@ def evaluate_semiconductor(
     }
 
 
+def _get_next_pending_tranche() -> dict | None:
+    """未消化（pending）の次のトランシェを返す。全部doneならNone"""
+    for t in STRATEGY["tranches"]:
+        if t["status"] == "pending":
+            return t
+    return None
+
+
+def _count_done_tranches() -> int:
+    """消化済みトランシェ数"""
+    return sum(1 for t in STRATEGY["tranches"] if t["status"] == "done")
+
+
 def evaluate_broad_market(
     crash_score: float, sp500_price: float, sp500_high: float,
     fear_greed: float, vix: float
@@ -193,48 +206,61 @@ def evaluate_broad_market(
     広域市場（S&P500 / オルカン）の投入判定
 
     NISA成長枠240万を4回に分けて投入する戦略
+    tranchesの消化状況を見て、全て投入済みなら買いアクションを出さない
     """
     if sp500_price is None or crash_score is None:
         return _unknown("広域市場", "データ取得失敗")
 
     sp500_from_high = ((sp500_price - sp500_high) / sp500_high) * 100 if sp500_high else 0
 
-    # 段階判定
-    if crash_score <= 20 and sp500_from_high <= -15:
+    # トランシェ消化状況を確認
+    next_tranche = _get_next_pending_tranche()
+    done_count = _count_done_tranches()
+    total_tranches = len(STRATEGY["tranches"])
+
+    # 全トランシェ投入済み → 買いアクションを出さない
+    if next_tranche is None:
+        signal = "COMPLETE"
+        action = f"NISA成長枠は全{total_tranches}回分を投入済みです。追加投入の枠はありません"
+        urgency = "none"
+        tranche = f"全{total_tranches}回投入完了"
+        reason = "計画通りの投入が完了しています。売りタイミングの判定に注目してください"
+    # 段階判定（未消化トランシェがある場合のみ）
+    elif crash_score <= 20 and sp500_from_high <= -15:
         signal = "STRONG_BUY"
         action = "SBI証券（NISA）でeMAXIS Slim S&P500を残り全額分、今すぐ注文してください"
         urgency = "high"
-        tranche = "4回目（残り全額）"
+        tranche = f"{next_tranche['label']}（残り{total_tranches - done_count}回分）"
         reason = f"市場の恐怖度が極限（スコア{crash_score}）で、S&P500も{sp500_from_high:.0f}%下落。歴史的な買い場です。注文から2営業日で購入完了します"
     elif crash_score <= 30 and sp500_from_high <= -10:
         signal = "BUY"
-        action = "SBI証券（NISA）でeMAXIS Slim S&P500を60万円分、今週中に注文してください"
+        action = f"SBI証券（NISA）でeMAXIS Slim S&P500を60万円分、今週中に注文してください（NISA {next_tranche['label']}）"
         urgency = "medium"
-        tranche = "2〜3回目"
+        tranche = next_tranche["label"]
         reason = f"市場が怖がっている（スコア{crash_score}）＋株価も{sp500_from_high:.0f}%下落。この組み合わせは買い時です"
     elif sp500_from_high <= -10:
         signal = "BUY"
-        action = "SBI証券（NISA）でeMAXIS Slim S&P500を60万円分、今週中に注文してください（NISA 1回目）"
+        action = f"SBI証券（NISA）でeMAXIS Slim S&P500を60万円分、今週中に注文してください（NISA {next_tranche['label']}）"
         urgency = "medium"
-        tranche = "1回目"
-        reason = f"S&P500が高値から{sp500_from_high:.0f}%下落。4回に分けて買う1回目です。注文から2営業日で購入完了します"
+        tranche = next_tranche["label"]
+        reason = f"S&P500が高値から{sp500_from_high:.0f}%下落。4回に分けて買う{next_tranche['label']}です。注文から2営業日で購入完了します"
     elif crash_score <= 40:
         signal = "WAIT"
         action = "S&P500はまだ買わないでください"
         urgency = "none"
-        tranche = "待機中"
+        tranche = f"次は{next_tranche['label']}（待機中）"
         reason = f"みんな怖がっていますが、株価の下落はまだ{sp500_from_high:.0f}%で浅いです。-10%（{sp500_high * 0.9:.0f}）以下まで待ちましょう"
     else:
         signal = "WAIT"
         action = "S&P500はまだ買わないでください"
         urgency = "none"
-        tranche = "待機中"
-        reason = f"まだ通常の状態です。暴落が来たら教えます。{sp500_high * 0.9:.0f}以下になったら1回目を買います"
+        tranche = f"次は{next_tranche['label']}（待機中）"
+        reason = f"まだ通常の状態です。暴落が来たら教えます。{sp500_high * 0.9:.0f}以下になったら{next_tranche['label']}を買います"
 
     # 6月末ルール
     deadline_note = None
     now = datetime.now()
-    if now.month >= 6 and signal in ("WAIT", "WATCH"):
+    if now.month >= 6 and signal in ("WAIT", "WATCH") and next_tranche is not None:
         deadline_note = "6月末までに暴落なし → 機会損失回避のため全額投入を検討"
 
     return {
@@ -244,6 +270,8 @@ def evaluate_broad_market(
         "urgency": urgency,
         "reason": reason,
         "tranche": tranche,
+        "done_count": done_count,
+        "total_tranches": total_tranches,
         "deadline_note": deadline_note,
         "data": {
             "crash_score": crash_score,
@@ -359,27 +387,36 @@ def generate_advice(
     broad = evaluate_broad_market(crash_score, sp500_price, sp500_high, fear_greed, vix)
     forex = evaluate_forex(usdjpy)
 
-    # 最も緊急度の高いアクションをヘッドラインに
+    # 最も緊急度の高いアクションをヘッドラインに（COMPLETE除外）
     all_sectors = [energy, semi, broad]
+    active_sectors = [s for s in all_sectors if s.get("signal") != "COMPLETE"]
     urgency_order = {"high": 0, "medium": 1, "low": 2, "none": 3}
-    all_sectors.sort(key=lambda s: urgency_order.get(s.get("urgency", "none"), 3))
+    active_sectors.sort(key=lambda s: urgency_order.get(s.get("urgency", "none"), 3))
 
-    top = all_sectors[0]
-    if top["urgency"] == "high":
-        headline = f"今すぐ注文してください → {top['action']}"
-    elif top["urgency"] == "medium":
-        headline = f"今週中に注文を検討 → {top['action']}"
-    elif top["urgency"] == "low":
-        headline = f"まだ買わないでください。もう少しで条件達成です"
+    if active_sectors:
+        top = active_sectors[0]
+        if top["urgency"] == "high":
+            headline = f"今すぐ注文してください → {top['action']}"
+        elif top["urgency"] == "medium":
+            headline = f"今週中に注文を検討 → {top['action']}"
+        elif top["urgency"] == "low":
+            headline = f"まだ買わないでください。もう少しで条件達成です"
+        else:
+            headline = "まだ買わないでください。条件が揃うまで待ちましょう"
     else:
-        headline = "まだ買わないでください。条件が揃うまで待ちましょう"
+        headline = "全セクター投入完了。売りタイミングの判定に注目してください"
 
     # 全体サマリー
     active_signals = [s for s in all_sectors if s["signal"] in ("BUY", "STRONG_BUY")]
+    complete_signals = [s for s in all_sectors if s["signal"] == "COMPLETE"]
     if active_signals:
         summary = f"{len(active_signals)}セクターで買いシグナル発動中"
     elif any(s["signal"] == "CONSIDER" for s in all_sectors):
         summary = "一部セクターで買い検討圏。条件が整えば投入"
+    elif complete_signals:
+        done = _count_done_tranches()
+        total = len(STRATEGY["tranches"])
+        summary = f"NISA {done}/{total}回投入済み。残りセクターは待機中"
     else:
         summary = "全セクター待機中。暴落を待つ戦略を継続"
 
