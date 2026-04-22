@@ -175,88 +175,83 @@ ACCOUNTS = {
 # ============================================================
 # 投入計画（未投入トランシェ）
 # ============================================================
+# 設計方針（清水さんの「S&P500以外の成長株は慎重に」方針を反映・2026-04-22）:
+# - S&P500を最優先の買い対象に（NISA成長枠の2/3）
+# - 個別株・セクターETFは「打診買い→本格買い」の2段階
+# - 集中リスクを減らすため各ポジションは小ロット
 PLAN = [
-    # --- NISA成長枠（残180万）---
+    # ===== NISA成長枠（残180万） =====
     {
-        "slot": "nisa_tranche2",
-        "account": "nisa_growth",
-        "symbol": "emaxis_sp500",
-        "amount": 600000,
-        "label": "2回目投入",
-        "priority": 1,
+        "slot": "nisa_sp500_2", "account": "nisa_growth", "symbol": "emaxis_sp500",
+        "amount": 600000, "label": "2回目投入（S&P500）", "priority": 1,
         "condition": {"type": "sp500_from_high", "value": -10},
         "condition_text": "S&P500（SPY）が高値から-10%以下まで下落",
+        "stage": "main",
     },
     {
-        "slot": "nisa_tranche3",
-        "account": "nisa_growth",
-        "symbol": "emaxis_sp500",
-        "amount": 600000,
-        "label": "3回目投入",
-        "priority": 2,
+        "slot": "nisa_sp500_3", "account": "nisa_growth", "symbol": "emaxis_sp500",
+        "amount": 600000, "label": "3回目投入（S&P500）", "priority": 2,
         "condition": {"type": "sp500_from_high", "value": -15},
-        "condition_text": "S&P500（SPY）が高値から-15%以下 or 関税再発動後の二番底",
+        "condition_text": "S&P500（SPY）が高値から-15%以下 or 底打ち3/7以上",
+        "stage": "main",
     },
     {
-        "slot": "nisa_gold",
-        "account": "nisa_growth",
-        "symbol": "gld_nisa",
-        "amount": 300000,
-        "label": "ゴールド枠",
-        "priority": 3,
-        "condition": {"type": "gold_from_high", "value": -5},
-        "condition_text": "金が高値から-5%調整 or Crash Score 30以下",
+        "slot": "nisa_gold_probe", "account": "nisa_growth", "symbol": "gld_nisa",
+        "amount": 100000, "label": "ゴールド打診買い", "priority": 3,
+        "condition": {"type": "gold_from_high", "value": -10},
+        "condition_text": "金が高値から-10%調整（打診買い。小ロット）",
+        "stage": "probe",
     },
     {
-        "slot": "nisa_reserve",
-        "account": "nisa_growth",
-        "symbol": "emaxis_sp500",
-        "amount": 300000,
-        "label": "予備枠（S&P500 or XLE）",
-        "priority": 4,
+        "slot": "nisa_gold_main", "account": "nisa_growth", "symbol": "gld_nisa",
+        "amount": 200000, "label": "ゴールド本格買い", "priority": 4,
+        "condition": {"type": "gold_and_crash", "value": {"gold_from_high": -15, "crash_max": 30}},
+        "condition_text": "金が高値から-15% かつ Crash Score 30以下",
+        "stage": "main",
+    },
+    {
+        "slot": "nisa_reserve", "account": "nisa_growth", "symbol": "emaxis_sp500",
+        "amount": 300000, "label": "予備枠（S&P500 or 状況に応じて切替）", "priority": 5,
         "condition": {"type": "bottom_signals", "value": 3},
         "condition_text": "底打ちシグナル3/7以上 or エネルギー急落（WTI $90以下）",
+        "stage": "reserve",
     },
-    # --- 特定口座（残57万）---
+
+    # ===== 特定口座（残57万） =====
     {
-        "slot": "tokutei_nvda",
-        "account": "tokutei",
-        "symbol": "nvda",
-        "amount": 200000,
-        "label": "AI半導体メイン",
-        "priority": 1,
+        "slot": "tokutei_nvda_probe", "account": "tokutei", "symbol": "nvda",
+        "amount": 120000, "label": "NVIDIA打診買い", "priority": 1,
+        "condition": {"type": "nvda_from_high", "value": -20},
+        "condition_text": "NVIDIAが高値から-20%以下（打診買い・小ロット）",
+        "stage": "probe",
+    },
+    {
+        "slot": "tokutei_nvda_main", "account": "tokutei", "symbol": "nvda",
+        "amount": 120000, "label": "NVIDIA本格買い", "priority": 2,
         "condition": {"type": "nvda_from_high", "value": -30},
-        "condition_text": "NVIDIAが高値から-30%以下",
+        "condition_text": "NVIDIAが高値から-30%以下（本格買い）",
+        "stage": "main",
     },
     {
-        "slot": "tokutei_soxl",
-        "account": "tokutei",
-        "symbol": "soxl",
-        "amount": 150000,
-        "label": "半導体3倍レバ（一発狙い）",
-        "priority": 2,
+        "slot": "tokutei_soxl", "account": "tokutei", "symbol": "soxl",
+        "amount": 140000, "label": "SOXL（一発狙い）", "priority": 3,
         "condition": {"type": "soxl_and_crash", "value": {"soxl_max": 30, "crash_max": 20}},
         "condition_text": "SOXL $30以下 かつ Crash Score 20以下",
+        "stage": "main",
     },
     {
-        "slot": "tokutei_gold",
-        "account": "tokutei",
-        "symbol": "gdx",
-        "amount": 120000,
-        "label": "金鉱株",
-        "priority": 3,
-        "condition": {"type": "gold_from_high", "value": -10},
-        "condition_text": "金が高値から-10%調整",
+        "slot": "tokutei_gdx", "account": "tokutei", "symbol": "gdx",
+        "amount": 100000, "label": "GDX打診買い（金鉱株）", "priority": 4,
+        "condition": {"type": "gold_from_high", "value": -13},
+        "condition_text": "金が高値から-13%調整（打診・小ロット）",
+        "stage": "probe",
     },
     {
-        "slot": "tokutei_energy",
-        "account": "tokutei",
-        "symbol": "xom",
-        "amount": 100000,
-        "label": "エネルギー個別",
-        "priority": 4,
+        "slot": "tokutei_xom", "account": "tokutei", "symbol": "xom",
+        "amount": 90000, "label": "XOM（エネルギー個別）", "priority": 5,
         "condition": {"type": "wti_price_above", "value": 120},
         "condition_text": "WTI原油 $120超で封鎖長期化確認時",
+        "stage": "main",
     },
 ]
 
@@ -707,11 +702,18 @@ def evaluate_plan_condition(plan_item, crash_score, sp500_from_high, gold_from_h
             met = gold_from_high <= cval
             diff = gold_from_high - cval
             progress_text = f"現在{gold_from_high:+.1f}% / 目標{cval}% → あと{diff:+.1f}%"
-        elif crash_score is not None and crash_score <= 30:
-            met = True
-            progress_text = f"Crash Score {crash_score:.0f} ≤ 30 で発動"
         else:
             progress_text = "金データなし"
+    elif ctype == "gold_and_crash":
+        # 金が下落 AND Crash Score も低下した時に発動（本格買い用）
+        g_threshold = cval.get("gold_from_high", -15)
+        c_threshold = cval.get("crash_max", 30)
+        gold_ok = gold_from_high is not None and gold_from_high <= g_threshold
+        crash_ok = crash_score is not None and crash_score <= c_threshold
+        met = gold_ok and crash_ok
+        gold_str = f"{gold_from_high:+.1f}%" if gold_from_high is not None else "N/A"
+        crash_str = f"{crash_score:.0f}" if crash_score is not None else "N/A"
+        progress_text = f"金{gold_str}/目標{g_threshold}% + Crash {crash_str}/{c_threshold}"
     elif ctype == "nvda_from_high":
         if nvda_from_high is not None:
             met = nvda_from_high <= cval
