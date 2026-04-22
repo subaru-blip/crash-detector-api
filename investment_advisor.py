@@ -273,6 +273,16 @@ PLAN = [
         "condition_text": "WTI原油 $120超で封鎖長期化確認時",
         "stage": "main",
     },
+    {
+        "slot": "tokutei_free_reserve", "account": "tokutei", "symbol": "nvda",
+        "amount": 100000, "label": "フリー予備枠（状況判断・楽天証券）", "priority": 5,
+        "condition": {"type": "manual", "value": None},
+        "condition_text": "清水さんの判断で任意発動（相場状況・新規機会に柔軟対応）",
+        "stage": "free",
+        "note": "2026-04-22 追加。GDXをNISAに移した分の10万を特定口座に戻した枠。"
+                "半導体押し目・SMH・AVGO等、状況に応じて使う。"
+                "※ TSM(台湾セミコン)は2027年台湾有事リスクのため避ける方針",
+    },
 ]
 
 
@@ -748,6 +758,9 @@ def _evaluate_raw_condition(ctype, cval, crash_score, sp500_from_high, gold_from
         bs_ok = bottom_signals_met >= bs
         wti_ok = wti_price is not None and wti_price <= wti_th
         return bs_ok or wti_ok
+    if ctype == "manual":
+        # 清水さんの判断で任意発動する枠。自動では発動しない
+        return False
     return False
 
 
@@ -845,6 +858,8 @@ def _build_progress_text(ctype, cval, crash_score, sp500_from_high, gold_from_hi
         wti_th = cval.get("wti_price_below", 90)
         wti_str = f"${wti_price}" if wti_price else "N/A"
         return f"底打ち{bottom_signals_met}/7 目標{bs}以上 ｜ WTI {wti_str}/目標${wti_th}以下（OR）"
+    if ctype == "manual":
+        return "清水さんの判断で任意発動（自動トリガーなし）"
     return ""
 
 
