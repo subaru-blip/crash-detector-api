@@ -20,20 +20,30 @@
       </div>
     </header>
 
-    <!-- 今日の判断（最重要。これだけ見ればOK） -->
-    <section class="today-section" id="todaySection">
+    <!-- ヘッドライン（最重要。1行で今やること） -->
+    <section class="today-section">
       <div class="today-card" id="todayCard">
-        <div class="today-action-label">今やること</div>
+        <div class="today-action-label">今日の結論</div>
         <div class="today-headline" id="todayHeadline">読み込み中...</div>
         <div class="today-summary" id="todaySummary"></div>
         <div class="today-bottom-note" id="todayBottomNote" style="display:none;"></div>
       </div>
     </section>
 
-    <!-- 市場の温度（ゲージ） -->
+    <!-- つみたて枠警告（マクロ5/5フル成立時のみ表示） -->
+    <section class="tsumitate-section" id="tsumitateWarning" style="display:none;">
+      <div class="tsumitate-card" id="tsumitateCard">
+        <div class="tsumitate-headline" id="tsumitateHeadline"></div>
+        <div class="tsumitate-detail" id="tsumitateDetail"></div>
+        <div class="tsumitate-guide" id="tsumitateGuide"></div>
+        <div class="tsumitate-list" id="tsumitateList"></div>
+      </div>
+    </section>
+
+    <!-- 市場の温度 -->
     <section class="temp-section">
       <div class="temp-card">
-        <div class="temp-label">市場の温度</div>
+        <div class="temp-label">市場の温度（Crash Score）</div>
         <div class="temp-row">
           <div id="gaugeChart" class="gauge-container-small"></div>
           <div class="temp-info">
@@ -45,61 +55,47 @@
       </div>
     </section>
 
-    <!-- セクター別アドバイス -->
-    <section class="sectors-section" id="adviceSection" style="display:none;">
-      <h2 class="section-title-simple">セクター別の判断</h2>
-      <div class="sector-cards" id="adviceSectors"></div>
+    <!-- 今日のアクション（優先順リスト） -->
+    <section class="action-section">
+      <h2 class="section-title-simple">今日のアクション</h2>
+      <div class="action-list" id="actionList"></div>
+    </section>
+
+    <!-- ポートフォリオ（口座枠別） -->
+    <section class="portfolio-section">
+      <h2 class="section-title-simple">ポートフォリオ</h2>
+      <div class="portfolio-cards" id="portfolioCards"></div>
+      <div class="portfolio-note">※「○○を買った / 売った」とClaude Codeに報告すると自動反映されます</div>
+    </section>
+
+    <!-- 買い戻しキュー（利確後の再投入予約） -->
+    <section class="buyback-section" id="buybackSection" style="display:none;">
+      <h2 class="section-title-simple">再投入予約（利確した資金）</h2>
+      <div class="buyback-card" id="buybackCard"></div>
+    </section>
+
+    <!-- マクロ過熱シグナル（売り5条件） -->
+    <section class="macro-section">
+      <h2 class="section-title-simple">マクロ過熱シグナル（売り判定の5条件）</h2>
+      <div class="macro-card" id="macroCard">
+        <div class="macro-header">
+          <span class="macro-label" id="macroLabel">--</span>
+          <span class="macro-count" id="macroCount">0/5</span>
+        </div>
+        <div class="macro-conditions" id="macroConditions"></div>
+      </div>
+    </section>
+
+    <!-- セクター参考情報 -->
+    <section class="sector-section">
+      <h2 class="section-title-simple">セクター状況（参考）</h2>
+      <div class="sector-cards" id="sectorInfoCards"></div>
       <div class="forex-info" id="adviceForex" style="display:none;"></div>
-    </section>
-
-    <!-- 売りシグナル（利確タイミング） -->
-    <section class="sell-section" id="sellSection" style="display:none;">
-      <h2 class="section-title-simple">売りタイミング（利確判断）</h2>
-      <div class="sell-card" id="sellCard">
-        <div class="sell-header">
-          <span class="sell-badge sa-badge" id="sellBadge">保有継続</span>
-          <span class="sell-count" id="sellCount">0/5</span>
-        </div>
-        <div class="sell-headline" id="sellHeadline">読み込み中...</div>
-        <div class="sell-action" id="sellAction"></div>
-        <div class="sell-conditions" id="sellConditions"></div>
-        <div class="sell-gold-note" id="goldSellNote" style="display:none;"></div>
-      </div>
-    </section>
-
-    <!-- 資金状況 -->
-    <section class="budget-section">
-      <h2 class="section-title-simple">資金状況</h2>
-      <div class="budget-card" id="budgetCard">
-        <div class="budget-row">
-          <span class="budget-label">NISA成長枠</span>
-          <span class="budget-amount" id="nisaRemaining">--</span>
-          <span class="budget-status" id="nisaStatus">--</span>
-        </div>
-        <div class="budget-row">
-          <span class="budget-label">特定口座</span>
-          <span class="budget-amount" id="tokuteiRemaining">--</span>
-          <span class="budget-status" id="tokuteiStatus">--</span>
-        </div>
-        <div class="budget-total">
-          <span>残り合計</span>
-          <span id="totalRemaining">--</span>
-        </div>
-      </div>
-      <div class="invest-history" id="investHistory" style="display:none;"></div>
-      <div class="invest-note">※ 投入記録はClaude Codeで報告すると自動反映されます</div>
-    </section>
-
-    <!-- 監視銘柄（シンプル版） -->
-    <section class="watch-section">
-      <h2 class="section-title-simple">注目している銘柄</h2>
-      <div class="watch-grid" id="watchlistGrid"></div>
     </section>
 
     <!-- 詳細データ（折りたたみ） -->
     <details class="detail-section">
       <summary class="detail-toggle">詳細データを見る</summary>
-
       <div class="detail-inner">
         <h3 class="detail-subtitle">主要指標</h3>
         <div class="indicator-grid" id="indicatorGrid"></div>
@@ -118,6 +114,9 @@
 
         <h3 class="detail-subtitle">原油・金・為替</h3>
         <div class="geo-grid" id="geoGrid"></div>
+
+        <h3 class="detail-subtitle">注目銘柄の現在値</h3>
+        <div class="watch-grid" id="watchlistGrid"></div>
       </div>
     </details>
 

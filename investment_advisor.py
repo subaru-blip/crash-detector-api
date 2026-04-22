@@ -1,757 +1,1128 @@
 """
-Investment Advisor Engine
-セクター別の買い/待ちシグナルを判定し、具体的なアクション指示を生成する
+Investment Advisor Engine v2（2026-04-22 刷新）
+清水さん個人の投資判断ツール。銘柄マスタ/計画/保有/売り判定3ルールを統合。
 
-清水さんの投資戦略（docs/investment-strategy-2026Q2.md）をコード化したもの
+設計思想:
+- SYMBOLS: 銘柄の日本語名・証券会社・注文方法のマスタ（表示はここから生成）
+- PLAN: 未投入のトランシェ計画。口座枠ごとに発動条件を明示
+- PORTFOLIO: 保有実績。売り判定はこれを対象にする
+- MACRO_SIGNALS: 5条件（Crash Score/Fear&Greed/VIX/RSI/S&P500高値圏）
+- 売り判定3ルール:
+    ルール1: マクロ過熱×含み益（NISA/特定口座で閾値差）
+    ルール2: 含み益+100%到達で機械的に半分利確
+    ルール3: レバETF特別（+50%半分、+100%全部、30日横ばい全部）
+
+戦略書: docs/investment-strategy-2026Q2.md と同期すること
 """
 
 from datetime import datetime
 
 
 # ============================================================
-# 戦略パラメータ（ダッシュボード上で表示・将来的に編集可能にする）
+# 銘柄マスタ
 # ============================================================
-STRATEGY = {
-    "total_budget": 2970000,  # 297万（成長投資枠 + 特定口座）
-    "nisa_growth_budget": 2400000,   # 成長投資枠 240万（SBI証券・新NISA）
-    "nisa_tsumitate_budget": 1200000,  # つみたて投資枠 120万（SBI証券・毎月10万で自動積立済み）
-    "tokutei_budget": 570000, # 特定口座 57万（楽天証券）
-    "brokers": {
-        "nisa": "SBI証券（新NISA）",
-        "tokutei": "楽天証券（特定口座）",
+SYMBOLS = {
+    "emaxis_sp500": {
+        "name": "eMAXIS Slim 米国株式（S&P500）",
+        "short_name": "eMAXIS S&P500",
+        "ticker_display": "eMAXIS Slim S&P500",
+        "proxy_ticker": "SPY",
+        "type": "investment_trust",
+        "broker": "SBI証券",
+        "broker_section": "投資信託",
+        "search_keyword": "eMAXIS Slim 米国株式",
+        "order_method": "金額指定（円建て）",
+        "settlement_days": 2,
+        "category": "米国株式インデックス",
+        "is_leveraged": False,
+        "note": "S&P500連動の投資信託。低コスト（信託報酬0.09%）",
     },
-    "notes": "つみたて投資枠120万は毎月10万の自動積立で使用済み。ツールで管理するのは成長投資枠+特定口座の297万",
-    "tranches": [
-        {"label": "1回目", "amount": 600000, "account": "nisa", "status": "done", "date": "2026-04-07", "ticker": "eMAXIS Slim S&P500"},
-        {"label": "2回目", "amount": 600000, "account": "nisa", "status": "pending"},
-        {"label": "3回目", "amount": 300000, "account": "nisa", "status": "pending", "note": "S&P500 or オルカン"},
-        {"label": "ゴールド枠", "amount": 300000, "account": "nisa", "status": "pending", "ticker": "グローバルX ゴールドETF(425A)"},
-        {"label": "4回目", "amount": 600000, "account": "nisa", "status": "pending"},
-    ],
+    "emaxis_allcountry": {
+        "name": "eMAXIS Slim 全世界株式（オール・カントリー）",
+        "short_name": "オルカン",
+        "ticker_display": "eMAXIS Slim オルカン",
+        "proxy_ticker": "VT",
+        "type": "investment_trust",
+        "broker": "SBI証券",
+        "broker_section": "投資信託",
+        "search_keyword": "eMAXIS Slim 全世界",
+        "order_method": "金額指定（円建て）",
+        "settlement_days": 2,
+        "category": "全世界株式",
+        "is_leveraged": False,
+        "note": "世界中の株式に分散。米国比率は約6割",
+    },
+    "xle": {
+        "name": "XLE（米国エネルギーセクターETF）",
+        "short_name": "XLE エネルギー",
+        "ticker_display": "XLE",
+        "proxy_ticker": "XLE",
+        "type": "us_etf",
+        "broker": "SBI証券",
+        "broker_section": "外国株式 > 米国株式 > ETF検索",
+        "search_keyword": "XLE",
+        "order_method": "株数指定（ドル建て）",
+        "settlement_days": 3,
+        "category": "エネルギーセクター",
+        "is_leveraged": False,
+        "note": "ExxonMobil・Chevron等を含む米国エネルギー大手ETF",
+    },
+    "nvda": {
+        "name": "NVIDIA（エヌビディア）",
+        "short_name": "NVIDIA",
+        "ticker_display": "NVDA",
+        "proxy_ticker": "NVDA",
+        "type": "us_stock",
+        "broker": "楽天証券",
+        "broker_section": "外国株式 > 米国株式",
+        "search_keyword": "NVDA",
+        "order_method": "株数指定（ドル建て）",
+        "settlement_days": 3,
+        "category": "AI半導体",
+        "is_leveraged": False,
+        "note": "AI半導体の王者。成長性は高いが単価も高い",
+    },
+    "soxl": {
+        "name": "SOXL（半導体ブル3倍ETF）",
+        "short_name": "SOXL 半導体3倍",
+        "ticker_display": "SOXL",
+        "proxy_ticker": "SOXL",
+        "type": "us_etf_leveraged",
+        "broker": "楽天証券",
+        "broker_section": "外国株式 > 米国株式 > ETF検索",
+        "search_keyword": "SOXL",
+        "order_method": "株数指定（ドル建て）",
+        "settlement_days": 3,
+        "category": "半導体レバレッジ",
+        "is_leveraged": True,
+        "note": "半導体指数の3倍連動。長期保有は減衰注意。底値での一発狙い",
+    },
+    "gld_nisa": {
+        "name": "グローバルX ゴールド・トラスト（425A）",
+        "short_name": "ゴールドETF(425A)",
+        "ticker_display": "425A",
+        "proxy_ticker": "GLD",
+        "type": "jp_etf",
+        "broker": "SBI証券",
+        "broker_section": "国内株式 > ETF > 銘柄コード",
+        "search_keyword": "425A",
+        "order_method": "株数指定（円建て）",
+        "settlement_days": 3,
+        "category": "ゴールド",
+        "is_leveraged": False,
+        "note": "東証上場のゴールドETF。NISA成長枠で買える",
+    },
+    "gdx": {
+        "name": "GDX（NYSE金鉱株ETF）",
+        "short_name": "GDX 金鉱株",
+        "ticker_display": "GDX",
+        "proxy_ticker": "GDX",
+        "type": "us_etf",
+        "broker": "楽天証券",
+        "broker_section": "外国株式 > 米国株式 > ETF検索",
+        "search_keyword": "GDX",
+        "order_method": "株数指定（ドル建て）",
+        "settlement_days": 3,
+        "category": "金鉱株",
+        "is_leveraged": False,
+        "note": "金鉱会社ETF。金価格上昇時にゴールド本体より大きく動く",
+    },
+    "xom": {
+        "name": "エクソンモービル",
+        "short_name": "XOM",
+        "ticker_display": "XOM",
+        "proxy_ticker": "XOM",
+        "type": "us_stock",
+        "broker": "楽天証券",
+        "broker_section": "外国株式 > 米国株式",
+        "search_keyword": "XOM",
+        "order_method": "株数指定（ドル建て）",
+        "settlement_days": 3,
+        "category": "エネルギー個別",
+        "is_leveraged": False,
+        "note": "世界最大級の石油メジャー。高配当",
+    },
 }
 
-# 約定ラグ情報（注文してから実際に買えるまでの日数）
-SETTLEMENT_LAG = {
-    "emaxis_sp500": {"name": "eMAXIS Slim S&P500", "days": 2, "note": "注文翌営業日の基準価額で約定、受渡は約定+2営業日"},
-    "emaxis_allcountry": {"name": "eMAXIS Slim 全世界株式", "days": 2, "note": "注文翌営業日の基準価額で約定"},
-    "xle": {"name": "XLE（エネルギーETF）", "days": 1, "note": "海外ETF。注文当日〜翌営業日に約定"},
-    "nvda": {"name": "NVIDIA", "days": 1, "note": "米国個別株。注文当日〜翌営業日に約定"},
-    "soxl": {"name": "SOXL", "days": 1, "note": "米国ETF。注文当日〜翌営業日に約定"},
+# 口座マスタ
+ACCOUNTS = {
+    "nisa_growth": {
+        "label": "NISA成長投資枠",
+        "broker": "SBI証券",
+        "annual_limit": 2400000,  # 240万/年
+        "tax_free": True,
+        "note": "非課税。売却しても当年枠は戻らない（翌年復活）",
+    },
+    "tokutei": {
+        "label": "特定口座",
+        "broker": "楽天証券",
+        "annual_limit": 570000,  # 57万（清水さんの自己設定）
+        "tax_free": False,
+        "tax_rate": 0.20315,  # 譲渡益税
+        "note": "売却益に20.315%課税。いつでも買い戻し可能",
+    },
+    "nisa_tsumitate": {
+        "label": "NISAつみたて投資枠",
+        "broker": "SBI証券",
+        "annual_limit": 1200000,
+        "tax_free": True,
+        "managed_by_tool": False,  # ツール対象外
+        "note": "個人で毎月10万自動積立中。ツールでは管理しない（長期保有固定）",
+    },
 }
 
 
 # ============================================================
-# セクター別シグナル判定
+# 投入計画（未投入トランシェ）
 # ============================================================
+PLAN = [
+    # --- NISA成長枠（残180万）---
+    {
+        "slot": "nisa_tranche2",
+        "account": "nisa_growth",
+        "symbol": "emaxis_sp500",
+        "amount": 600000,
+        "label": "2回目投入",
+        "priority": 1,
+        "condition": {"type": "sp500_from_high", "value": -10},
+        "condition_text": "S&P500（SPY）が高値から-10%以下まで下落",
+    },
+    {
+        "slot": "nisa_tranche3",
+        "account": "nisa_growth",
+        "symbol": "emaxis_sp500",
+        "amount": 600000,
+        "label": "3回目投入",
+        "priority": 2,
+        "condition": {"type": "sp500_from_high", "value": -15},
+        "condition_text": "S&P500（SPY）が高値から-15%以下 or 関税再発動後の二番底",
+    },
+    {
+        "slot": "nisa_gold",
+        "account": "nisa_growth",
+        "symbol": "gld_nisa",
+        "amount": 300000,
+        "label": "ゴールド枠",
+        "priority": 3,
+        "condition": {"type": "gold_from_high", "value": -5},
+        "condition_text": "金が高値から-5%調整 or Crash Score 30以下",
+    },
+    {
+        "slot": "nisa_reserve",
+        "account": "nisa_growth",
+        "symbol": "emaxis_sp500",
+        "amount": 300000,
+        "label": "予備枠（S&P500 or XLE）",
+        "priority": 4,
+        "condition": {"type": "bottom_signals", "value": 3},
+        "condition_text": "底打ちシグナル3/7以上 or エネルギー急落（WTI $90以下）",
+    },
+    # --- 特定口座（残57万）---
+    {
+        "slot": "tokutei_nvda",
+        "account": "tokutei",
+        "symbol": "nvda",
+        "amount": 200000,
+        "label": "AI半導体メイン",
+        "priority": 1,
+        "condition": {"type": "nvda_from_high", "value": -30},
+        "condition_text": "NVIDIAが高値から-30%以下",
+    },
+    {
+        "slot": "tokutei_soxl",
+        "account": "tokutei",
+        "symbol": "soxl",
+        "amount": 150000,
+        "label": "半導体3倍レバ（一発狙い）",
+        "priority": 2,
+        "condition": {"type": "soxl_and_crash", "value": {"soxl_max": 30, "crash_max": 20}},
+        "condition_text": "SOXL $30以下 かつ Crash Score 20以下",
+    },
+    {
+        "slot": "tokutei_gold",
+        "account": "tokutei",
+        "symbol": "gdx",
+        "amount": 120000,
+        "label": "金鉱株",
+        "priority": 3,
+        "condition": {"type": "gold_from_high", "value": -10},
+        "condition_text": "金が高値から-10%調整",
+    },
+    {
+        "slot": "tokutei_energy",
+        "account": "tokutei",
+        "symbol": "xom",
+        "amount": 100000,
+        "label": "エネルギー個別",
+        "priority": 4,
+        "condition": {"type": "wti_price_above", "value": 120},
+        "condition_text": "WTI原油 $120超で封鎖長期化確認時",
+    },
+]
 
-def evaluate_energy(wti_price: float, xle_price: float, xle_high_52w: float) -> dict:
-    """
-    エネルギーセクターの買い/待ちシグナルを判定
 
-    清水さんの読み: エネルギーは伸びる（ホルムズ海峡リスク、AI電力需要）
-    教訓: 3月に買えなかった。セクター個別のシグナルが必要だった
-    """
-    if wti_price is None or xle_price is None:
-        return _unknown("エネルギー", "データ取得失敗")
+# ============================================================
+# 保有実績（手動管理。購入報告があれば追記する）
+# ============================================================
+PORTFOLIO = [
+    {
+        "slot": "nisa_tranche1",
+        "symbol": "emaxis_sp500",
+        "account": "nisa_growth",
+        "invested_amount": 600000,
+        "invested_date": "2026-04-07",
+        "proxy_price_at_buy": 679.91,  # 購入日のSPY価格（概算評価用）
+        "note": "1回目投入",
+    },
+]
 
-    xle_from_high = ((xle_price - xle_high_52w) / xle_high_52w) * 100 if xle_high_52w else 0
 
-    # 判定ロジック
-    if wti_price <= 80:
-        signal = "STRONG_BUY"
-        action = f"SBI証券でXLE（エネルギーETF）を60万円分、今すぐ注文してください"
-        urgency = "high"
-        reason = f"原油が${wti_price}まで下がりました。停戦後のバーゲン価格です。注文から翌営業日に買えます"
-    elif wti_price <= 90:
-        signal = "BUY"
-        action = f"SBI証券でXLE（エネルギーETF）を60万円分、今週中に注文してください"
-        urgency = "medium"
-        reason = f"原油が${wti_price}に調整中。この水準なら買っても大丈夫です"
-    elif xle_from_high <= -20:
-        signal = "BUY"
-        action = f"XLEが高値から{xle_from_high:.0f}%下落。60万円分を今週中に注文してください"
-        urgency = "medium"
-        reason = "エネルギーETFが大幅下落中。反発すれば利益が出ます"
-    elif wti_price >= 120:
-        signal = "WAIT"
-        action = "エネルギーはまだ買わないでください"
-        urgency = "none"
-        reason = f"原油${wti_price}は高すぎます。今買うと高値掴みになるリスクがあります"
-    elif wti_price >= 100 and xle_from_high >= -10:
-        signal = "WAIT"
-        action = "エネルギーはまだ買わないでください"
-        urgency = "none"
-        reason = f"XLEが高値圏です。停戦が進めば急落するリスクがあります。原油${90}以下まで待ちましょう"
-    else:
-        signal = "WAIT"
-        action = "エネルギーはまだ買わないでください"
-        urgency = "none"
-        reason = f"原油${wti_price}は中途半端な価格帯です。${90}以下に下がったら買い時です"
+# ============================================================
+# 買い戻しキュー（利確した資金の再投入予約）
+# ============================================================
+# 利確実行時に自動追加される。3段階ラダーで Crash Score に応じて買い戻す。
+# NISA枠は売却しても当年枠が戻らないため、買い戻し先は特定口座（楽天証券）。
+#
+# データ例（利確を実行すると以下のような構造が追加される）:
+# {
+#     "id": "buyback_20260815_01",
+#     "sold_date": "2026-08-15",
+#     "sold_amount": 200000,
+#     "sold_from_account": "nisa_growth",
+#     "sold_symbol": "emaxis_sp500",
+#     "reason": "マクロ3/5成立+含み益+30% → 30%利確",
+#     "stages": [
+#         {"label": "1段目", "amount": 66000, "target_symbol": "emaxis_sp500",
+#          "target_account": "tokutei", "trigger": {"type": "crash_below", "value": 50},
+#          "condition_text": "Crash Score 50以下で発動", "status": "pending"},
+#         {"label": "2段目", "amount": 66000, "target_symbol": "emaxis_sp500",
+#          "target_account": "tokutei", "trigger": {"type": "crash_below", "value": 30},
+#          "condition_text": "Crash Score 30以下で発動", "status": "pending"},
+#         {"label": "3段目", "amount": 68000, "target_symbol": "emaxis_sp500",
+#          "target_account": "tokutei", "trigger": {"type": "bottom_or_crash", "value": 20},
+#          "condition_text": "Crash 20以下 or 底打ちシグナル3/7以上", "status": "pending"},
+#     ],
+# }
+BUYBACK_QUEUE = []
 
+
+def make_buyback_entry(sold_date, sold_amount, sold_from_account, sold_symbol, reason,
+                        target_symbol=None, target_account="tokutei"):
+    """利確時に3段階ラダーの買い戻し予約を生成するヘルパー"""
+    if target_symbol is None:
+        target_symbol = sold_symbol
+    third = sold_amount // 3
+    remainder = sold_amount - third * 2  # 端数を3段目に寄せる
+    entry_id = f"buyback_{sold_date.replace('-', '')}_{sold_symbol}"
     return {
-        "sector": "エネルギー",
-        "signal": signal,
-        "action": action,
-        "urgency": urgency,
+        "id": entry_id,
+        "sold_date": sold_date,
+        "sold_amount": sold_amount,
+        "sold_from_account": sold_from_account,
+        "sold_symbol": sold_symbol,
         "reason": reason,
-        "data": {
-            "wti": wti_price,
-            "xle_price": xle_price,
-            "xle_high_52w": xle_high_52w,
-            "xle_from_high_pct": round(xle_from_high, 1),
-        },
-        "buy_targets": {
-            "best": f"WTI ${80}以下（停戦合意時）",
-            "good": f"WTI ${90}以下（調整時）",
-            "current": f"WTI ${wti_price}",
-        },
+        "stages": [
+            {"label": "1段目", "amount": third, "target_symbol": target_symbol,
+             "target_account": target_account,
+             "trigger": {"type": "crash_below", "value": 50},
+             "condition_text": "Crash Score 50以下で発動", "status": "pending"},
+            {"label": "2段目", "amount": third, "target_symbol": target_symbol,
+             "target_account": target_account,
+             "trigger": {"type": "crash_below", "value": 30},
+             "condition_text": "Crash Score 30以下で発動", "status": "pending"},
+            {"label": "3段目", "amount": remainder, "target_symbol": target_symbol,
+             "target_account": target_account,
+             "trigger": {"type": "bottom_or_crash", "value": 20},
+             "condition_text": "Crash 20以下 or 底打ちシグナル3/7以上で発動",
+             "status": "pending"},
+        ],
     }
 
 
-def evaluate_semiconductor(
-    nvda_price: float, nvda_high_52w: float,
-    soxl_price: float, crash_score: float
-) -> dict:
-    """
-    半導体セクターの買い/待ちシグナルを判定
+def _evaluate_buyback_trigger(trigger, crash_score, bottom_signals_met):
+    ttype = trigger["type"]
+    value = trigger["value"]
+    if ttype == "crash_below":
+        return crash_score is not None and crash_score <= value
+    if ttype == "bottom_or_crash":
+        if bottom_signals_met >= 3:
+            return True
+        return crash_score is not None and crash_score <= value
+    return False
 
-    NVIDIA: AI需要の王者。ファンダメンタルズは過去最高
-    SOXL: 半導体3倍レバ。底値での一発逆転枠
-    """
-    if nvda_price is None:
-        return _unknown("半導体", "NVIDIAデータ取得失敗")
 
-    nvda_from_high = ((nvda_price - nvda_high_52w) / nvda_high_52w) * 100 if nvda_high_52w else 0
-
-    if nvda_from_high <= -40:
-        signal = "STRONG_BUY"
-        action = f"楽天証券（特定口座）でNVIDIA株を25万円分、今すぐ注文してください"
-        urgency = "high"
-        reason = f"NVIDIAが${nvda_price}（高値から{nvda_from_high:.0f}%下落）。AIの需要は変わっていないのに異常な安さです。翌営業日に買えます"
-    elif nvda_from_high <= -30:
-        signal = "BUY"
-        action = f"楽天証券（特定口座）でNVIDIA株を25万円分、今週中に注文してください"
-        urgency = "medium"
-        reason = f"NVIDIAが${nvda_price}（高値から{nvda_from_high:.0f}%下落）。決算は過去最高なのに安くなっています"
-    elif nvda_from_high <= -20:
-        signal = "WAIT"
-        action = "NVIDIAはまだ買わないでください"
-        urgency = "none"
-        reason = f"${nvda_price}（高値から{nvda_from_high:.0f}%下落）。あと10%下がれば買い時です。${nvda_high_52w * 0.7:.0f}以下まで待ちましょう"
-    elif nvda_from_high <= -10:
-        signal = "WAIT"
-        action = "NVIDIAはまだ買わないでください"
-        urgency = "none"
-        reason = f"${nvda_price}はまだ高いです。${nvda_high_52w * 0.7:.0f}以下まで待ちましょう"
-    else:
-        signal = "WAIT"
-        action = "NVIDIAはまだ買わないでください"
-        urgency = "none"
-        reason = f"${nvda_price}は高値圏です。今買うと損する可能性が高いです"
-
-    # SOXL判定（Crash Scoreと連動）
-    soxl_advice = None
-    if soxl_price is not None and soxl_price <= 30 and crash_score is not None and crash_score <= 20:
-        soxl_advice = {
-            "signal": "BUY",
-            "action": f"SOXL ${soxl_price} + Crash Score {crash_score}。特定口座で25万買い",
-            "reason": "半導体3倍ETFが暴落 + 市場全体が恐怖の極み。一発逆転のチャンス",
-        }
-    elif soxl_price is not None and soxl_price <= 20:
-        soxl_advice = {
-            "signal": "STRONG_BUY",
-            "action": f"SOXL ${soxl_price}。底値圏。特定口座で25万買い",
-            "reason": "コロナショック級の下落。ここで買えれば10倍の可能性",
-        }
-
+def build_buyback_summary(crash_score, bottom_signals_met):
+    """買い戻しキューの全体状況を返す"""
+    active_actions = []
+    total_pending = 0
+    for entry in BUYBACK_QUEUE:
+        for stage in entry["stages"]:
+            if stage.get("status") != "pending":
+                continue
+            total_pending += stage["amount"]
+            fired = _evaluate_buyback_trigger(stage["trigger"], crash_score, bottom_signals_met)
+            sym = SYMBOLS.get(stage["target_symbol"], {})
+            acc = ACCOUNTS.get(stage["target_account"], {})
+            if fired:
+                active_actions.append({
+                    "type": "buyback",
+                    "urgency": "medium",
+                    "ready": True,
+                    "entry_id": entry["id"],
+                    "stage_label": stage.get("label", ""),
+                    "amount": stage["amount"],
+                    "amount_text": f"{stage['amount']:,}円",
+                    "symbol_name": sym.get("name", stage["target_symbol"]),
+                    "short_name": sym.get("short_name", stage["target_symbol"]),
+                    "account": acc.get("label", stage["target_account"]),
+                    "broker": sym.get("broker", ""),
+                    "broker_section": sym.get("broker_section", ""),
+                    "search_keyword": sym.get("search_keyword", ""),
+                    "order_method": sym.get("order_method", ""),
+                    "condition_text": stage.get("condition_text", ""),
+                    "original_reason": entry.get("reason", ""),
+                    "sold_date": entry.get("sold_date"),
+                })
     return {
-        "sector": "半導体",
-        "signal": signal,
-        "action": action,
-        "urgency": urgency,
-        "reason": reason,
-        "data": {
-            "nvda_price": nvda_price,
-            "nvda_high_52w": nvda_high_52w,
-            "nvda_from_high_pct": round(nvda_from_high, 1),
-            "soxl_price": soxl_price,
-        },
-        "soxl": soxl_advice,
-        "buy_targets": {
-            "best": f"NVIDIA ${nvda_high_52w * 0.6:.0f}以下（高値比-40%）",
-            "good": f"NVIDIA ${nvda_high_52w * 0.7:.0f}以下（高値比-30%）",
-            "consider": f"NVIDIA ${nvda_high_52w * 0.8:.0f}以下（高値比-20%）",
-            "current": f"NVIDIA ${nvda_price}（高値比{nvda_from_high:.0f}%）",
-        },
+        "entries": BUYBACK_QUEUE,
+        "total_pending": total_pending,
+        "active_actions": active_actions,
+        "queue_count": len(BUYBACK_QUEUE),
     }
 
 
-def _get_next_pending_tranche() -> dict | None:
-    """未消化（pending）の次のトランシェを返す。全部doneならNone"""
-    for t in STRATEGY["tranches"]:
-        if t["status"] == "pending":
-            return t
+# ============================================================
+# つみたて枠の大暴落警告（マクロ5/5フル成立時のみ通知）
+# ============================================================
+# つみたて枠（131万相当）は売り判定対象外（完全HOLD）。
+# ただし、市場が極端に過熱（マクロ5/5フル成立）した時のみ、
+# 「SBI画面で含み益+100%超を確認したら半分利確検討」と通知する。
+TSUMITATE_HOLDINGS_NOTE = {
+    "sbi_v_all_us": "SBI・V・全米株式インデックスファンド（約101万）",
+    "emaxis_sp500_tsumitate": "eMAXIS Slim 米国株式(S&P500)（約10万）",
+    "emaxis_allcountry_tsumitate": "eMAXIS Slim 全世界株式(オルカン)（約20万）",
+}
+
+
+def evaluate_tsumitate_warning(macro):
+    """つみたて枠への大暴落警告（5/5フル成立時のみ）"""
+    met = macro["met_count"]
+    if met >= 5:
+        return {
+            "level": "WARNING",
+            "headline": "⚠️ つみたて枠の利確検討タイミング",
+            "detail": (
+                "市場が歴史的な過熱水準（5/5条件成立）に達しています。"
+                "SBI証券の「保有商品一覧」画面で、つみたて枠3銘柄の評価損益率を確認してください。"
+                "含み益が+100%を超えていれば半分利確を、+50%以上なら30%利確を検討してください。"
+            ),
+            "guide": "SBI証券 → 口座管理 → 保有商品一覧 → 「評価損益率」列をチェック",
+            "holdings_note": TSUMITATE_HOLDINGS_NOTE,
+        }
+    if met >= 4:
+        return {
+            "level": "CAUTION",
+            "headline": "つみたて枠の含み益率を把握しておいてください",
+            "detail": (
+                "マクロ過熱4/5成立。5/5到達すれば、つみたて枠の部分利確検討フェーズに入ります。"
+                "今のうちにSBI画面で評価損益率を確認しておくと、判断がスムーズです。"
+            ),
+            "guide": "SBI証券 → 口座管理 → 保有商品一覧",
+            "holdings_note": TSUMITATE_HOLDINGS_NOTE,
+        }
     return None
 
 
-def _count_done_tranches() -> int:
-    """消化済みトランシェ数"""
-    return sum(1 for t in STRATEGY["tranches"] if t["status"] == "done")
-
-
-def evaluate_broad_market(
-    crash_score: float, sp500_price: float, sp500_high: float,
-    fear_greed: float, vix: float
-) -> dict:
-    """
-    広域市場（S&P500 / オルカン）の投入判定
-
-    NISA成長枠240万を4回に分けて投入する戦略
-    tranchesの消化状況を見て、全て投入済みなら買いアクションを出さない
-    """
-    if sp500_price is None or crash_score is None:
-        return _unknown("広域市場", "データ取得失敗")
-
-    sp500_from_high = ((sp500_price - sp500_high) / sp500_high) * 100 if sp500_high else 0
-
-    # トランシェ消化状況を確認
-    next_tranche = _get_next_pending_tranche()
-    done_count = _count_done_tranches()
-    total_tranches = len(STRATEGY["tranches"])
-
-    # 全トランシェ投入済み → 買いアクションを出さない
-    if next_tranche is None:
-        signal = "COMPLETE"
-        action = f"NISA成長枠は全{total_tranches}回分を投入済みです。追加投入の枠はありません"
-        urgency = "none"
-        tranche = f"全{total_tranches}回投入完了"
-        reason = "計画通りの投入が完了しています。売りタイミングの判定に注目してください"
-    # 段階判定（未消化トランシェがある場合のみ）
-    elif crash_score <= 20 and sp500_from_high <= -15:
-        signal = "STRONG_BUY"
-        action = "SBI証券（NISA）でeMAXIS Slim S&P500を残り全額分、今すぐ注文してください"
-        urgency = "high"
-        tranche = f"{next_tranche['label']}（残り{total_tranches - done_count}回分）"
-        reason = f"市場の恐怖度が極限（スコア{crash_score}）で、S&P500も{sp500_from_high:.0f}%下落。歴史的な買い場です。注文から2営業日で購入完了します"
-    elif crash_score <= 30 and sp500_from_high <= -10:
-        signal = "BUY"
-        action = f"SBI証券（NISA）でeMAXIS Slim S&P500を60万円分、今週中に注文してください（NISA {next_tranche['label']}）"
-        urgency = "medium"
-        tranche = next_tranche["label"]
-        reason = f"市場が怖がっている（スコア{crash_score}）＋株価も{sp500_from_high:.0f}%下落。この組み合わせは買い時です"
-    elif sp500_from_high <= -10:
-        signal = "BUY"
-        action = f"SBI証券（NISA）でeMAXIS Slim S&P500を60万円分、今週中に注文してください（NISA {next_tranche['label']}）"
-        urgency = "medium"
-        tranche = next_tranche["label"]
-        reason = f"S&P500が高値から{sp500_from_high:.0f}%下落。4回に分けて買う{next_tranche['label']}です。注文から2営業日で購入完了します"
-    elif crash_score <= 40:
-        signal = "WAIT"
-        action = "S&P500はまだ買わないでください"
-        urgency = "none"
-        tranche = f"次は{next_tranche['label']}（待機中）"
-        reason = f"みんな怖がっていますが、株価の下落はまだ{sp500_from_high:.0f}%で浅いです。-10%（{sp500_high * 0.9:.0f}）以下まで待ちましょう"
-    else:
-        signal = "WAIT"
-        action = "S&P500はまだ買わないでください"
-        urgency = "none"
-        tranche = f"次は{next_tranche['label']}（待機中）"
-        reason = f"まだ通常の状態です。暴落が来たら教えます。{sp500_high * 0.9:.0f}以下になったら{next_tranche['label']}を買います"
-
-    # 6月末ルール
-    deadline_note = None
-    now = datetime.now()
-    if now.month >= 6 and signal in ("WAIT", "WATCH") and next_tranche is not None:
-        deadline_note = "6月末までに暴落なし → 機会損失回避のため全額投入を検討"
-
-    return {
-        "sector": "広域市場（S&P500/オルカン）",
-        "signal": signal,
-        "action": action,
-        "urgency": urgency,
-        "reason": reason,
-        "tranche": tranche,
-        "done_count": done_count,
-        "total_tranches": total_tranches,
-        "deadline_note": deadline_note,
-        "data": {
-            "crash_score": crash_score,
-            "sp500_price": sp500_price,
-            "sp500_high": sp500_high,
-            "sp500_from_high_pct": round(sp500_from_high, 1),
-            "fear_greed": fear_greed,
-            "vix": vix,
-        },
-        "buy_targets": {
-            "tranche1": f"S&P500 {sp500_high * 0.90:.0f}以下（高値比-10%）",
-            "tranche2": f"S&P500 {sp500_high * 0.85:.0f}以下（高値比-15%）",
-            "tranche3": "関税再発動後の二番底 or 底打ちシグナル3/7以上",
-            "tranche4": "VIX 40超→低下 + Fear&Greed 10→上昇",
-            "current": f"S&P500 {sp500_price}（高値比{sp500_from_high:.0f}%）",
-        },
-    }
-
-
-def evaluate_gold(gold_price: float, gold_high_52w: float, crash_score: float) -> dict:
-    """
-    ゴールドセクターの買い/待ちシグナルを判定
-
-    清水さんの読み: 金はこれから上がる（中央銀行買い、脱ドル化、地政学リスク）
-    J.P.モルガン予測: 2026年末6,300ドル、ゴールドマン: 5,400ドル
-    """
-    if gold_price is None:
-        return _unknown("ゴールド", "データ取得失敗")
-
-    gold_from_high = ((gold_price - gold_high_52w) / gold_high_52w) * 100 if gold_high_52w else 0
-
-    # 買い判定
-    if gold_from_high <= -20:
-        signal = "STRONG_BUY"
-        action = "SBI証券（NISA）でゴールドETF（425A）を30万円分、今すぐ注文してください"
-        urgency = "high"
-        reason = f"金が${gold_price}（高値から{gold_from_high:.0f}%下落）。中央銀行の買いは続いているのに異常な安さです"
-    elif gold_from_high <= -10:
-        signal = "BUY"
-        action = "SBI証券（NISA）でゴールドETF（425A）を30万円分、今週中に注文してください"
-        urgency = "medium"
-        reason = f"金が${gold_price}（高値から{gold_from_high:.0f}%下落）。調整局面は買い場です"
-    elif gold_from_high <= -5 and crash_score is not None and crash_score <= 30:
-        signal = "BUY"
-        action = "SBI証券（NISA）でゴールドETF（425A）を30万円分、今週中に注文してください"
-        urgency = "medium"
-        reason = f"金${gold_price}が調整中 + 市場全体が恐怖圏（スコア{crash_score}）。安全資産の金を仕込むタイミングです"
-    elif gold_price >= 7000:
-        signal = "WAIT"
-        action = "ゴールドは高値圏です。今は買わないでください"
-        urgency = "none"
-        reason = f"${gold_price}は過熱水準。利確を検討する局面です"
-    elif gold_from_high >= -3:
-        signal = "WAIT"
-        action = "ゴールドはまだ買わないでください"
-        urgency = "none"
-        reason = f"${gold_price}は高値圏。5%以上の調整を待ちましょう（${gold_high_52w * 0.95:.0f}以下）"
-    else:
-        signal = "WAIT"
-        action = "ゴールドはまだ買わないでください"
-        urgency = "none"
-        reason = f"${gold_price}は中途半端な水準。もう少し下がったら買い時です"
-
-    return {
-        "sector": "ゴールド",
-        "signal": signal,
-        "action": action,
-        "urgency": urgency,
-        "reason": reason,
-        "data": {
-            "gold_price": gold_price,
-            "gold_high_52w": gold_high_52w,
-            "gold_from_high_pct": round(gold_from_high, 1),
-        },
-        "buy_targets": {
-            "best": f"金 ${gold_high_52w * 0.80:.0f}以下（高値比-20%）",
-            "good": f"金 ${gold_high_52w * 0.90:.0f}以下（高値比-10%）",
-            "consider": f"金 ${gold_high_52w * 0.95:.0f}以下（高値比-5%）",
-            "current": f"金 ${gold_price}（高値比{gold_from_high:.0f}%）",
-        },
-    }
-
-
 # ============================================================
-# 売りシグナル判定（成長投資枠の利確タイミング）
+# マクロシグナル判定（売り5条件）
 # ============================================================
-
-def evaluate_sell_signals(
-    crash_score: float,
-    fear_greed: float,
-    vix: float,
-    rsi: float,
-    sp500_price: float,
-    sp500_high: float,
-    gold_price: float,
-    gold_high_52w: float,
-) -> dict:
-    """
-    保有ポジションの売りタイミングを判定
-
-    NISA成長投資枠は非課税なので利益を最大化したいが、
-    暴落で利益を吹き飛ばすリスクも避けたい。
-    段階的に利確シグナルを出す。
-    """
+def evaluate_macro_signals(crash_score, fear_greed, vix, rsi, sp500_price, sp500_high):
+    """5条件のマクロ過熱シグナルを判定"""
     signals = []
-    sell_level = "HOLD"  # HOLD / WATCH / SELL_PARTIAL / SELL_STRONG
 
-    # --- 条件1: 極度の強欲（Crash Score 80+）---
+    # 条件1: Crash Score 80+
     if crash_score is not None and crash_score >= 80:
-        signals.append({
-            "condition": "極度の強欲",
-            "met": True,
-            "detail": f"Crash Score {crash_score} → 市場が過熱しています",
-            "severity": "high",
-        })
+        signals.append({"key": "crash_score", "label": "市場の過熱度（Crash Score 80+）", "met": True,
+                        "severity": "high", "detail": f"Crash Score {crash_score:.0f} → 極度の強欲圏"})
     elif crash_score is not None and crash_score >= 70:
-        signals.append({
-            "condition": "強欲圏",
-            "met": True,
-            "detail": f"Crash Score {crash_score} → 利確準備を始めてください",
-            "severity": "medium",
-        })
+        signals.append({"key": "crash_score", "label": "市場の過熱度（Crash Score 70+）", "met": True,
+                        "severity": "medium", "detail": f"Crash Score {crash_score:.0f} → 強欲圏入り"})
     else:
-        signals.append({
-            "condition": "市場の過熱",
-            "met": False,
-            "detail": f"Crash Score {crash_score or 'N/A'} → まだ過熱していません",
-            "severity": "none",
-        })
+        cs_str = f"{crash_score:.0f}" if crash_score is not None else "N/A"
+        signals.append({"key": "crash_score", "label": "市場の過熱度（Crash Score 80+）", "met": False,
+                        "severity": "none", "detail": f"Crash Score {cs_str} → まだ過熱していない"})
 
-    # --- 条件2: Fear & Greed 80+（極度の強欲）---
+    # 条件2: Fear & Greed 80+
     if fear_greed is not None and fear_greed >= 80:
-        signals.append({
-            "condition": "Fear&Greed 極度の強欲",
-            "met": True,
-            "detail": f"Fear&Greed {fear_greed} → みんなが欲張っています。反転に注意",
-            "severity": "high",
-        })
+        signals.append({"key": "fear_greed", "label": "市場心理（Fear&Greed 80+）", "met": True,
+                        "severity": "high", "detail": f"Fear&Greed {fear_greed:.0f} → 極度の強欲"})
     elif fear_greed is not None and fear_greed >= 70:
-        signals.append({
-            "condition": "Fear&Greed 強欲",
-            "met": True,
-            "detail": f"Fear&Greed {fear_greed} → 楽観が広がっています",
-            "severity": "medium",
-        })
+        signals.append({"key": "fear_greed", "label": "市場心理（Fear&Greed 70+）", "met": True,
+                        "severity": "medium", "detail": f"Fear&Greed {fear_greed:.0f} → 強欲"})
     else:
-        signals.append({
-            "condition": "Fear&Greed過熱",
-            "met": False,
-            "detail": f"Fear&Greed {fear_greed or 'N/A'} → まだ楽観的すぎません",
-            "severity": "none",
-        })
+        signals.append({"key": "fear_greed", "label": "市場心理（Fear&Greed 80+）", "met": False,
+                        "severity": "none", "detail": f"Fear&Greed {fear_greed if fear_greed is not None else 'N/A'} → 楽観的すぎない"})
 
-    # --- 条件3: VIX極端に低い（12以下 = 油断）---
+    # 条件3: VIX 12以下（油断）
     if vix is not None and vix <= 12:
-        signals.append({
-            "condition": "VIX低すぎ（油断）",
-            "met": True,
-            "detail": f"VIX {vix} → 市場が油断しきっています。暴落の前兆かも",
-            "severity": "high",
-        })
+        signals.append({"key": "vix", "label": "恐怖指数（VIX 12以下=油断）", "met": True,
+                        "severity": "high", "detail": f"VIX {vix:.1f} → 市場が油断している"})
     elif vix is not None and vix <= 15:
-        signals.append({
-            "condition": "VIX低め",
-            "met": True,
-            "detail": f"VIX {vix} → リスク認識が低い状態です",
-            "severity": "medium",
-        })
+        signals.append({"key": "vix", "label": "恐怖指数（VIX 15以下）", "met": True,
+                        "severity": "medium", "detail": f"VIX {vix:.1f} → 警戒感低下"})
     else:
-        signals.append({
-            "condition": "VIX油断",
-            "met": False,
-            "detail": f"VIX {vix or 'N/A'} → 市場は適度に警戒しています",
-            "severity": "none",
-        })
+        vix_str = f"{vix:.1f}" if vix is not None else "N/A"
+        signals.append({"key": "vix", "label": "恐怖指数（VIX 12以下=油断）", "met": False,
+                        "severity": "none", "detail": f"VIX {vix_str} → 市場は警戒している"})
 
-    # --- 条件4: RSI過熱（75+）---
+    # 条件4: RSI 75+
     if rsi is not None and rsi >= 75:
-        signals.append({
-            "condition": "RSI買われすぎ",
-            "met": True,
-            "detail": f"RSI {rsi} → 買われすぎの水準です",
-            "severity": "high",
-        })
+        signals.append({"key": "rsi", "label": "RSI買われすぎ（75+）", "met": True,
+                        "severity": "high", "detail": f"RSI {rsi:.0f} → 買われすぎ水準"})
     elif rsi is not None and rsi >= 70:
-        signals.append({
-            "condition": "RSIやや過熱",
-            "met": True,
-            "detail": f"RSI {rsi} → やや買われすぎです",
-            "severity": "medium",
-        })
+        signals.append({"key": "rsi", "label": "RSIやや過熱（70+）", "met": True,
+                        "severity": "medium", "detail": f"RSI {rsi:.0f} → やや過熱"})
     else:
-        signals.append({
-            "condition": "RSI過熱",
-            "met": False,
-            "detail": f"RSI {rsi or 'N/A'} → まだ買われすぎではありません",
-            "severity": "none",
-        })
+        rsi_str = f"{rsi:.0f}" if rsi is not None else "N/A"
+        signals.append({"key": "rsi", "label": "RSI買われすぎ（75+）", "met": False,
+                        "severity": "none", "detail": f"RSI {rsi_str} → 過熱していない"})
 
-    # --- 条件5: S&P500が高値更新圏 ---
+    # 条件5: S&P500高値圏（高値比-1%以内）
     sp500_from_high = None
-    if sp500_price is not None and sp500_high is not None and sp500_high > 0:
+    if sp500_price and sp500_high:
         sp500_from_high = ((sp500_price - sp500_high) / sp500_high) * 100
         if sp500_from_high >= -1:
-            signals.append({
-                "condition": "S&P500高値圏",
-                "met": True,
-                "detail": f"S&P500 {sp500_price}（高値比{sp500_from_high:.1f}%）→ 最高値付近です",
-                "severity": "medium",
-            })
+            signals.append({"key": "sp500_high", "label": "S&P500高値圏（高値比-1%以内）", "met": True,
+                            "severity": "medium", "detail": f"S&P500 高値比 {sp500_from_high:.1f}% → 最高値付近"})
         else:
-            signals.append({
-                "condition": "S&P500高値圏",
-                "met": False,
-                "detail": f"S&P500 {sp500_price}（高値比{sp500_from_high:.1f}%）→ まだ高値圏ではありません",
-                "severity": "none",
-            })
-
-    # --- 売りレベル判定 ---
-    high_count = sum(1 for s in signals if s["met"] and s["severity"] == "high")
-    medium_count = sum(1 for s in signals if s["met"] and s["severity"] == "medium")
-    met_count = sum(1 for s in signals if s["met"])
-
-    if high_count >= 3:
-        sell_level = "SELL_STRONG"
-        headline = "利確を強く推奨します。複数の過熱シグナルが同時発動しています"
-        action = "S&P500ポジションの50〜70%を利確してください。残りは様子見"
-    elif high_count >= 2 or (high_count >= 1 and medium_count >= 2):
-        sell_level = "SELL_PARTIAL"
-        headline = "一部利確を検討してください"
-        action = "S&P500ポジションの30〜50%の利確を検討。特に含み益が大きいものから"
-    elif met_count >= 2:
-        sell_level = "WATCH"
-        headline = "利確の準備を始めてください"
-        action = "まだ売る必要はありませんが、条件がさらに揃えば利確です。売り注文の準備だけしておいてください"
+            signals.append({"key": "sp500_high", "label": "S&P500高値圏（高値比-1%以内）", "met": False,
+                            "severity": "none", "detail": f"S&P500 高値比 {sp500_from_high:.1f}% → 高値圏ではない"})
     else:
-        sell_level = "HOLD"
-        headline = "売る必要はありません。保有継続してください"
-        action = "市場はまだ過熱していません。そのまま持ち続けてください"
+        signals.append({"key": "sp500_high", "label": "S&P500高値圏（高値比-1%以内）", "met": False,
+                        "severity": "none", "detail": "S&P500データなし"})
 
-    # --- ゴールド売りシグナル（個別）---
-    gold_sell = None
-    if gold_price is not None and gold_high_52w is not None:
-        gold_from_high = ((gold_price - gold_high_52w) / gold_high_52w) * 100
-        if gold_price >= 7000:
-            gold_sell = {
-                "signal": "SELL_PARTIAL",
-                "action": f"金${gold_price}が$7,000超え。ゴールドETFの半分を利確してください",
-                "reason": "歴史的高値圏。利益確定して安全に",
-            }
-        elif gold_price >= 6300 and rsi is not None and rsi >= 70:
-            gold_sell = {
-                "signal": "WATCH",
-                "action": f"金${gold_price}がJ.P.モルガン目標に接近。利確準備を",
-                "reason": "アナリスト予測の上限付近。過熱していれば利確検討",
-            }
-
+    met_count = sum(1 for s in signals if s["met"])
+    high_count = sum(1 for s in signals if s["met"] and s["severity"] == "high")
     return {
-        "sell_level": sell_level,
-        "headline": headline,
-        "action": action,
         "signals": signals,
         "met_count": met_count,
-        "total_conditions": len(signals),
-        "gold_sell": gold_sell,
-        "data": {
-            "crash_score": crash_score,
-            "fear_greed": fear_greed,
-            "vix": vix,
-            "rsi": rsi,
-            "sp500_from_high_pct": round(sp500_from_high, 1) if sp500_from_high is not None else None,
+        "high_count": high_count,
+        "total": len(signals),
+    }
+
+
+# ============================================================
+# ポートフォリオ評価（概算）
+# ============================================================
+def _current_price(symbol_key, watchlist, geopolitical, sp500_price):
+    """銘柄の概算現在価格（プロキシ銘柄ベース）"""
+    sym = SYMBOLS.get(symbol_key, {})
+    proxy = sym.get("proxy_ticker")
+    if proxy in watchlist and watchlist[proxy].get("price"):
+        return watchlist[proxy]["price"]
+    # プロキシが取れない場合の代替
+    if symbol_key in ("emaxis_sp500",):
+        return sp500_price  # SPYで代用
+    if symbol_key in ("gld_nisa",):
+        gld = watchlist.get("GLD", {})
+        return gld.get("price")
+    return None
+
+
+def evaluate_holding_sell(holding, macro, watchlist, geopolitical, sp500_price, rsi):
+    """
+    保有銘柄1つの売り判定（3ルール）
+    - ルール1: マクロ過熱×含み益
+    - ルール2: 含み益+100%で半分利確
+    - ルール3: レバETF特別
+    """
+    sym_key = holding["symbol"]
+    sym = SYMBOLS.get(sym_key, {})
+    account_key = holding["account"]
+    account = ACCOUNTS.get(account_key, {})
+    tax_free = account.get("tax_free", False)
+    is_leveraged = sym.get("is_leveraged", False)
+
+    # 含み益率を概算
+    current_price = _current_price(sym_key, watchlist, geopolitical, sp500_price)
+    buy_price = holding.get("proxy_price_at_buy")
+    if current_price and buy_price:
+        profit_pct = ((current_price - buy_price) / buy_price) * 100
+    else:
+        profit_pct = None
+
+    decision = "HOLD"
+    action = "保有継続"
+    reason = ""
+    sell_ratio = 0
+
+    # --- ルール3: レバETF ---
+    if is_leveraged and profit_pct is not None:
+        if profit_pct >= 100:
+            decision = "SELL_ALL"
+            sell_ratio = 100
+            action = f"全部利確（レバレッジETFの減衰リスク回避）"
+            reason = f"レバETFで+{profit_pct:.0f}%。長期保有は減衰するので全利確"
+        elif profit_pct >= 50:
+            decision = "SELL_HALF"
+            sell_ratio = 50
+            action = f"半分利確（レバETF特別ルール）"
+            reason = f"レバETFで+{profit_pct:.0f}%。半分利確して元本回収"
+        # 横ばい30日の判定は過去データが必要なのでここでは省略（将来対応）
+
+    # --- ルール2: 含み益+100%到達 ---
+    if decision == "HOLD" and profit_pct is not None and profit_pct >= 100:
+        decision = "SELL_HALF"
+        sell_ratio = 50
+        action = "半分利確（ダブル到達）"
+        reason = f"含み益+{profit_pct:.0f}%達成。半分利確してタダ株化"
+
+    # --- ルール1: マクロ過熱×含み益 ---
+    if decision == "HOLD" and profit_pct is not None:
+        met = macro["met_count"]
+        # 閾値（NISA/特定口座で差）
+        if tax_free:
+            # NISA: 含み益+30%以上
+            profit_threshold = 30
+        else:
+            # 特定口座: 含み益+50%以上
+            profit_threshold = 50
+
+        if profit_pct >= profit_threshold:
+            if met >= 5:
+                decision = "SELL_70"
+                sell_ratio = 70
+                action = "70%利確（5条件フル成立）"
+                reason = f"マクロ過熱5/5+含み益{profit_pct:.0f}%。大半を利確"
+            elif met >= 4:
+                decision = "SELL_50"
+                sell_ratio = 50
+                action = "50%利確"
+                reason = f"マクロ過熱4/5+含み益{profit_pct:.0f}%。半分利確"
+            elif met >= 3:
+                decision = "SELL_30"
+                sell_ratio = 30
+                action = "30%利確"
+                reason = f"マクロ過熱3/5+含み益{profit_pct:.0f}%。一部利確"
+            elif met >= 2:
+                decision = "WATCH"
+                action = "利確準備"
+                reason = f"マクロ過熱2/5。さらに条件揃えば利確。売り注文の準備を"
+
+    # HOLD時の表示
+    if decision == "HOLD":
+        if profit_pct is not None:
+            reason = f"含み益{profit_pct:+.0f}%。マクロ過熱{macro['met_count']}/5。売る必要なし"
+        else:
+            reason = f"マクロ過熱{macro['met_count']}/5。売る必要なし（価格データなし）"
+
+    # 税金目安（特定口座のみ）
+    tax_note = None
+    if not tax_free and profit_pct is not None and profit_pct > 0 and sell_ratio > 0:
+        profit_amount = holding["invested_amount"] * (profit_pct / 100) * (sell_ratio / 100)
+        tax_amount = profit_amount * 0.20315
+        tax_note = f"（売却益の約20%が税金。{int(tax_amount):,}円）"
+
+    return {
+        "slot": holding.get("slot"),
+        "symbol_key": sym_key,
+        "symbol_name": sym.get("name", sym_key),
+        "short_name": sym.get("short_name", sym_key),
+        "account_label": account.get("label", account_key),
+        "broker": sym.get("broker", ""),
+        "invested_amount": holding["invested_amount"],
+        "invested_date": holding.get("invested_date"),
+        "current_price": current_price,
+        "buy_price": buy_price,
+        "profit_pct": round(profit_pct, 1) if profit_pct is not None else None,
+        "estimated_value": int(holding["invested_amount"] * (1 + profit_pct / 100)) if profit_pct is not None else None,
+        "estimated_profit": int(holding["invested_amount"] * (profit_pct / 100)) if profit_pct is not None else None,
+        "is_leveraged": is_leveraged,
+        "tax_free": tax_free,
+        "decision": decision,
+        "sell_ratio": sell_ratio,
+        "action": action,
+        "reason": reason,
+        "tax_note": tax_note,
+    }
+
+
+def build_portfolio_summary(macro, watchlist, geopolitical, sp500_price, rsi):
+    """保有ポートフォリオ全体の集計+銘柄ごとの売り判定"""
+    holdings = []
+    account_totals = {"nisa_growth": 0, "tokutei": 0}
+    for h in PORTFOLIO:
+        judged = evaluate_holding_sell(h, macro, watchlist, geopolitical, sp500_price, rsi)
+        holdings.append(judged)
+        if h["account"] in account_totals:
+            account_totals[h["account"]] += h["invested_amount"]
+
+    # 口座枠別の残額
+    account_summary = {}
+    for acc_key in ["nisa_growth", "tokutei"]:
+        acc = ACCOUNTS[acc_key]
+        used = account_totals.get(acc_key, 0)
+        remaining = acc["annual_limit"] - used
+        account_summary[acc_key] = {
+            "label": acc["label"],
+            "broker": acc["broker"],
+            "total": acc["annual_limit"],
+            "used": used,
+            "remaining": remaining,
+            "tax_free": acc["tax_free"],
+            "holdings": [h for h in holdings if h["account_label"] == acc["label"]],
+        }
+
+    return {
+        "accounts": account_summary,
+        "holdings": holdings,
+        "total_invested": sum(account_totals.values()),
+        "total_current_value": sum(h["estimated_value"] for h in holdings if h["estimated_value"]),
+        "total_profit": sum(h["estimated_profit"] for h in holdings if h["estimated_profit"]),
+    }
+
+
+# ============================================================
+# 投入計画の発動判定
+# ============================================================
+def evaluate_plan_condition(plan_item, crash_score, sp500_from_high, gold_from_high,
+                             nvda_from_high, soxl_price, wti_price, bottom_signals_met):
+    """計画条件が満たされているかを判定し、進捗を返す"""
+    cond = plan_item["condition"]
+    ctype = cond["type"]
+    cval = cond["value"]
+
+    met = False
+    progress_text = ""
+
+    if ctype == "sp500_from_high":
+        if sp500_from_high is not None:
+            met = sp500_from_high <= cval
+            diff = sp500_from_high - cval  # 負の数同士。mustはcval=-10でsp500=-2なら、-2 - (-10) = +8 (まだ8%足りない)
+            progress_text = f"現在{sp500_from_high:+.1f}% / 目標{cval}% → あと{diff:+.1f}%"
+        else:
+            progress_text = "S&P500データなし"
+    elif ctype == "gold_from_high":
+        if gold_from_high is not None:
+            met = gold_from_high <= cval
+            diff = gold_from_high - cval
+            progress_text = f"現在{gold_from_high:+.1f}% / 目標{cval}% → あと{diff:+.1f}%"
+        elif crash_score is not None and crash_score <= 30:
+            met = True
+            progress_text = f"Crash Score {crash_score:.0f} ≤ 30 で発動"
+        else:
+            progress_text = "金データなし"
+    elif ctype == "nvda_from_high":
+        if nvda_from_high is not None:
+            met = nvda_from_high <= cval
+            diff = nvda_from_high - cval
+            progress_text = f"現在{nvda_from_high:+.1f}% / 目標{cval}% → あと{diff:+.1f}%"
+        else:
+            progress_text = "NVIDIAデータなし"
+    elif ctype == "soxl_and_crash":
+        soxl_max = cval["soxl_max"]
+        crash_max = cval["crash_max"]
+        soxl_ok = soxl_price is not None and soxl_price <= soxl_max
+        crash_ok = crash_score is not None and crash_score <= crash_max
+        met = soxl_ok and crash_ok
+        soxl_str = f"${soxl_price:.2f}" if soxl_price else "N/A"
+        crash_str = f"{crash_score:.0f}" if crash_score is not None else "N/A"
+        progress_text = f"SOXL {soxl_str}/${soxl_max} + Crash {crash_str}/{crash_max}"
+    elif ctype == "wti_price_above":
+        met = wti_price is not None and wti_price >= cval
+        progress_text = f"WTI現在${wti_price if wti_price else 'N/A'} / 目標${cval}超"
+    elif ctype == "bottom_signals":
+        met = bottom_signals_met >= cval
+        progress_text = f"底打ちシグナル{bottom_signals_met}/7 / 目標{cval}以上"
+
+    return {"met": met, "progress_text": progress_text}
+
+
+def build_action_list(macro, portfolio_summary, buyback_summary, crash_score, indicators,
+                       watchlist, geopolitical, bottom_signals_met):
+    """今日やることの優先順リスト"""
+    sp500_price = indicators.get("ma_deviation", {}).get("price")
+    sp500_high = sp500_price * 1.02 if sp500_price else None  # TODO: 動的取得
+    # SPY高値はdata_fetcher側で取得している想定。とりあえず現在値の+2%を仮置き→あとで差し替え
+
+    sp500_from_high = None
+    if sp500_price and sp500_high and sp500_high > 0:
+        sp500_from_high = ((sp500_price - sp500_high) / sp500_high) * 100
+
+    nvda_data = watchlist.get("NVDA", {})
+    nvda_from_high = nvda_data.get("drawdown_pct")
+
+    soxl_price = watchlist.get("SOXL", {}).get("price")
+    wti_price = geopolitical.get("wti", {}).get("value")
+    gold_price = geopolitical.get("gold", {}).get("value")
+    gld_data = watchlist.get("GLD", {})
+    gold_from_high = gld_data.get("drawdown_pct")
+
+    actions = []
+
+    # === 1. 売り（優先表示）===
+    for h in portfolio_summary["holdings"]:
+        if h["decision"] in ("SELL_30", "SELL_50", "SELL_70", "SELL_HALF", "SELL_ALL"):
+            urgency = "high" if h["decision"] in ("SELL_70", "SELL_ALL") else "medium"
+            actions.append({
+                "type": "sell",
+                "urgency": urgency,
+                "title": f"【売り】{h['short_name']}を{h['sell_ratio']}%利確",
+                "symbol_key": h["symbol_key"],
+                "symbol_name": h["symbol_name"],
+                "account": h["account_label"],
+                "broker": h["broker"],
+                "amount_text": f"保有{h['invested_amount']:,}円 × {h['sell_ratio']}%",
+                "condition_text": h["reason"],
+                "ready": True,
+                "tax_note": h.get("tax_note"),
+                "detail": h["action"],
+            })
+        elif h["decision"] == "WATCH":
+            actions.append({
+                "type": "watch",
+                "urgency": "low",
+                "title": f"【利確準備】{h['short_name']}",
+                "symbol_key": h["symbol_key"],
+                "symbol_name": h["symbol_name"],
+                "account": h["account_label"],
+                "broker": h["broker"],
+                "condition_text": h["reason"],
+                "ready": False,
+                "detail": h["action"],
+            })
+
+    # === 1.5 買い戻し（利確した資金の再投入予約・優先度高）===
+    for bb in buyback_summary.get("active_actions", []):
+        actions.append({
+            "type": "buyback",
+            "urgency": bb.get("urgency", "medium"),
+            "title": f"【買い戻し】{bb['short_name']} を{bb['amount_text']}（{bb['stage_label']}）",
+            "symbol_key": bb.get("entry_id"),
+            "symbol_name": bb["symbol_name"],
+            "short_name": bb["short_name"],
+            "account": bb["account"],
+            "broker": bb["broker"],
+            "broker_section": bb["broker_section"],
+            "search_keyword": bb["search_keyword"],
+            "order_method": bb["order_method"],
+            "amount": bb["amount"],
+            "amount_text": bb["amount_text"],
+            "condition_text": bb["condition_text"],
+            "ready": True,
+            "detail": f"{bb.get('original_reason', '')}（{bb.get('sold_date', '')}利確分）",
+        })
+
+    # === 2. 買い（計画）===
+    for plan in PLAN:
+        sym = SYMBOLS.get(plan["symbol"], {})
+        acc = ACCOUNTS.get(plan["account"], {})
+        result = evaluate_plan_condition(
+            plan, crash_score, sp500_from_high, gold_from_high,
+            nvda_from_high, soxl_price, wti_price, bottom_signals_met,
+        )
+
+        urgency = "medium" if result["met"] else "none"
+        action_type = "buy" if result["met"] else "buy_wait"
+
+        actions.append({
+            "type": action_type,
+            "urgency": urgency,
+            "title": ("【買い発動】" if result["met"] else "【買い待機】")
+                     + f"{acc.get('label', plan['account'])} {plan['label']}",
+            "symbol_key": plan["symbol"],
+            "symbol_name": sym.get("name", plan["symbol"]),
+            "short_name": sym.get("short_name", plan["symbol"]),
+            "ticker_display": sym.get("ticker_display", ""),
+            "account": acc.get("label", plan["account"]),
+            "broker": sym.get("broker", ""),
+            "broker_section": sym.get("broker_section", ""),
+            "search_keyword": sym.get("search_keyword", ""),
+            "order_method": sym.get("order_method", ""),
+            "settlement_days": sym.get("settlement_days", 2),
+            "amount": plan["amount"],
+            "amount_text": f"{plan['amount']:,}円",
+            "condition_text": plan["condition_text"],
+            "progress_text": result["progress_text"],
+            "ready": result["met"],
+            "priority": plan["priority"],
+            "slot": plan["slot"],
+            "is_leveraged": sym.get("is_leveraged", False),
+        })
+
+    # === 並び替え（緊急度 > ready > priority）===
+    urgency_order = {"high": 0, "medium": 1, "low": 2, "none": 3}
+    actions.sort(key=lambda a: (
+        urgency_order.get(a["urgency"], 3),
+        0 if a.get("ready") else 1,
+        a.get("priority", 99),
+    ))
+
+    return actions
+
+
+# ============================================================
+# セクター別情報（参考表示用。既存ロジックを簡略化して維持）
+# ============================================================
+def evaluate_sector_info(wti, xle_data, nvda_data, soxl_data, gold_price, gld_data,
+                         crash_score, sp500_price, sp500_high):
+    """セクター別の参考情報（買いシグナルは action_list で出すので、ここは状況説明のみ）"""
+    xle_price = xle_data.get("price")
+    xle_from_high = xle_data.get("drawdown_pct", 0)
+    nvda_price = nvda_data.get("price")
+    nvda_from_high = nvda_data.get("drawdown_pct", 0)
+    soxl_price = soxl_data.get("price")
+    gld_price = gld_data.get("price")
+    gld_from_high = gld_data.get("drawdown_pct", 0)
+
+    return {
+        "energy": {
+            "label": "エネルギー",
+            "status": f"XLE ${xle_price} (高値比{xle_from_high:+.1f}%) / WTI ${wti if wti else 'N/A'}",
+            "comment": _energy_comment(wti, xle_from_high),
+        },
+        "semiconductor": {
+            "label": "半導体",
+            "status": f"NVDA ${nvda_price} (高値比{nvda_from_high:+.1f}%) / SOXL ${soxl_price if soxl_price else 'N/A'}",
+            "comment": _semi_comment(nvda_from_high, soxl_price, crash_score),
+        },
+        "broad_market": {
+            "label": "広域市場（S&P500）",
+            "status": f"S&P500 {sp500_price:.0f}" if sp500_price else "S&P500 N/A" ,
+            "comment": _broad_comment(crash_score, sp500_price, sp500_high),
+        },
+        "gold": {
+            "label": "ゴールド",
+            "status": f"GLD ${gld_price if gld_price else 'N/A'} (高値比{gld_from_high:+.1f}%) / 金 ${gold_price if gold_price else 'N/A'}",
+            "comment": _gold_comment(gld_from_high, crash_score),
         },
     }
 
 
-def evaluate_forex(usdjpy: float) -> dict:
-    """為替リスク評価"""
+def _energy_comment(wti, xle_from_high):
+    if wti is None:
+        return "原油データ取得失敗"
+    if wti <= 80:
+        return "停戦後のバーゲン価格。XLEを買う好機"
+    if wti <= 90:
+        return "調整中。この水準なら買い検討"
+    if xle_from_high and xle_from_high <= -20:
+        return "XLEが大幅下落。買い時"
+    if wti >= 120:
+        return "原油高騰中。高値掴みリスク高い"
+    return "中途半端な価格帯。原油$90以下まで待ち"
+
+
+def _semi_comment(nvda_from_high, soxl_price, crash_score):
+    if nvda_from_high is None:
+        return "NVIDIAデータ取得失敗"
+    if nvda_from_high <= -40:
+        return "NVIDIAが異常な安値。歴史的買い場"
+    if nvda_from_high <= -30:
+        return "NVIDIA十分に下落。買い検討圏"
+    if soxl_price and soxl_price <= 30 and crash_score and crash_score <= 20:
+        return "SOXL+市場恐怖で買い検討圏"
+    return "NVIDIAはまだ高値圏。-30%まで待ち"
+
+
+def _broad_comment(crash_score, sp500_price, sp500_high):
+    if crash_score is None:
+        return "データ不足"
+    if crash_score <= 20:
+        return "極度の恐怖。歴史的買い場"
+    if crash_score <= 30:
+        return "恐怖圏。段階買いのチャンス"
+    if crash_score <= 50:
+        return "中立圏。急がない"
+    return "強欲圏。利確検討"
+
+
+def _gold_comment(gld_from_high, crash_score):
+    if gld_from_high is not None and gld_from_high <= -10:
+        return "金が調整中。買い時"
+    if crash_score and crash_score <= 30:
+        return "市場恐怖+金は安全資産として仕込むタイミング"
+    if gld_from_high is not None and gld_from_high >= -3:
+        return "金は高値圏。利確検討局面"
+    return "様子見"
+
+
+def evaluate_forex(usdjpy):
     if usdjpy is None:
-        return _unknown("為替", "USD/JPYデータ取得失敗")
-
+        return None
     if usdjpy >= 160:
-        risk = "HIGH"
-        note = "日銀介入警戒ライン。円高急反転リスクあり"
-        opportunity = "介入で円高 → 米国株の円建て価格が下がる → 買い場"
-    elif usdjpy >= 155:
-        risk = "MEDIUM"
-        note = "円安圏。ここからさらに円安の余地は限定的"
-        opportunity = "分割投入で為替リスクを時間分散"
-    elif usdjpy >= 145:
-        risk = "LOW"
-        note = "適度な円安水準"
-        opportunity = "米国株投資に良い環境"
-    else:
-        risk = "FAVORABLE"
-        note = "円高水準。米国株の円建て価格が割安"
-        opportunity = "ドル建て資産を買うチャンス"
-
-    return {
-        "sector": "為替",
-        "usdjpy": usdjpy,
-        "risk_level": risk,
-        "note": note,
-        "opportunity": opportunity,
-    }
+        return {"usdjpy": usdjpy, "risk_level": "HIGH",
+                "note": "日銀介入警戒ライン",
+                "opportunity": "介入で円高 → 米国株の円建て価格が下がる → 買い場"}
+    if usdjpy >= 155:
+        return {"usdjpy": usdjpy, "risk_level": "MEDIUM",
+                "note": "円安圏。分割投入推奨",
+                "opportunity": "分割投入で為替リスクを時間分散"}
+    if usdjpy >= 145:
+        return {"usdjpy": usdjpy, "risk_level": "LOW",
+                "note": "適度な円安",
+                "opportunity": "米国株投資に良好な環境"}
+    return {"usdjpy": usdjpy, "risk_level": "FAVORABLE",
+            "note": "円高水準",
+            "opportunity": "ドル建て資産が割安"}
 
 
 # ============================================================
-# 統合アドバイス生成
+# 統合（generate_advice）
 # ============================================================
-
-def generate_advice(
-    crash_score: float,
-    indicators: dict,
-    watchlist: dict,
-    geopolitical: dict,
-    bottom_signals: dict = None,
-) -> dict:
-    """
-    全データを統合して投資アドバイスを生成
-
-    Returns:
-        {
-            "headline": "今のアクション（最も優先度の高い1文）",
-            "sectors": { energy: {...}, semiconductor: {...}, broad_market: {...} },
-            "forex": {...},
-            "summary": "全体サマリー",
-            "updated_at": "...",
-        }
-    """
-    # WTI取得
-    wti = geopolitical.get("wti", {}).get("value")
-
-    # XLE取得
-    xle_data = watchlist.get("XLE", {})
-    xle_price = xle_data.get("price")
-    xle_high = xle_data.get("high_52w")
-
-    # NVIDIA取得
-    nvda_data = watchlist.get("NVDA", {})
-    nvda_price = nvda_data.get("price")
-    nvda_high = nvda_data.get("high_52w")
-
-    # SOXL取得
-    soxl_data = watchlist.get("SOXL", {})
-    soxl_price = soxl_data.get("price")
-
-    # ゴールド取得
-    gold_price = geopolitical.get("gold", {}).get("value")
-    gld_data = watchlist.get("GLD", {})
-    gold_high_52w = gld_data.get("high_52w")
-    # GLD ETF価格を金先物価格に概算変換（GLD ≈ 金価格/10）
-    if gold_high_52w and gold_price:
-        # geopoliticalのgoldが先物価格（$4000台）、GLDはETF価格（$400台）
-        # 52週高値比較は先物ベースで行う
-        gold_high_52w_futures = gold_high_52w * 10  # GLD→先物概算
-    else:
-        gold_high_52w_futures = gold_price * 1.15 if gold_price else None  # フォールバック
-
-    # S&P500取得（SPY ETFベースで統一）
-    sp500_price = None
-    sp500_high = None
-    ma_data = indicators.get("ma_deviation", {})
-    if ma_data.get("price"):
-        sp500_price = ma_data["price"]
-    # SPYの52週高値をyfinanceから動的取得
-    try:
-        import yfinance as yf
-        spy = yf.Ticker("SPY")
-        spy_hist = spy.history(period="1y")
-        if not spy_hist.empty:
-            sp500_high = float(spy_hist["Close"].max())
-    except Exception:
-        pass
-    # フォールバック: 現在価格から推定
-    if sp500_high is None and sp500_price is not None:
-        sp500_high = sp500_price * 1.15
-
-    # Fear & Greed / VIX / RSI
+def generate_advice(crash_score, indicators, watchlist, geopolitical, bottom_signals=None):
+    """メインエントリー: ダッシュボード用の完全な advice を返す"""
+    # 基礎データ
     fear_greed = indicators.get("fear_greed", {}).get("value")
     vix = indicators.get("vix", {}).get("value")
     rsi = indicators.get("rsi", {}).get("value")
-
-    # USD/JPY
+    ma_data = indicators.get("ma_deviation", {})
+    sp500_price = ma_data.get("price")
+    sp500_high = ma_data.get("high_52w")  # data_fetcher側で対応していれば使う
+    if not sp500_high:
+        # フォールバック: MA200日線から概算
+        ma200 = ma_data.get("ma200")
+        sp500_high = ma200 * 1.15 if ma200 else (sp500_price * 1.05 if sp500_price else None)
     usdjpy = geopolitical.get("usdjpy", {}).get("value")
+    wti = geopolitical.get("wti", {}).get("value")
+    gold_price = geopolitical.get("gold", {}).get("value")
 
-    # セクター別評価（買い）
-    energy = evaluate_energy(wti, xle_price, xle_high)
-    semi = evaluate_semiconductor(nvda_price, nvda_high, soxl_price, crash_score)
-    broad = evaluate_broad_market(crash_score, sp500_price, sp500_high, fear_greed, vix)
-    gold = evaluate_gold(gold_price, gold_high_52w_futures, crash_score)
+    xle_data = watchlist.get("XLE", {})
+    nvda_data = watchlist.get("NVDA", {})
+    soxl_data = watchlist.get("SOXL", {})
+    gld_data = watchlist.get("GLD", {})
+
+    # マクロシグナル
+    macro = evaluate_macro_signals(crash_score, fear_greed, vix, rsi, sp500_price, sp500_high)
+
+    # ポートフォリオ
+    portfolio = build_portfolio_summary(macro, watchlist, geopolitical, sp500_price, rsi)
+
+    # 底打ちシグナル成立数
+    bottom_met = 0
+    if bottom_signals and isinstance(bottom_signals, dict):
+        bottom_met = bottom_signals.get("met_count", 0)
+
+    # 買い戻しキュー
+    buyback = build_buyback_summary(crash_score, bottom_met)
+
+    # つみたて枠の警告（マクロ5/5フル成立時のみ）
+    tsumitate_warning = evaluate_tsumitate_warning(macro)
+
+    # アクションリスト
+    action_list = build_action_list(macro, portfolio, buyback, crash_score, indicators,
+                                      watchlist, geopolitical, bottom_met)
+
+    # セクター状況（参考）
+    sectors_info = evaluate_sector_info(wti, xle_data, nvda_data, soxl_data,
+                                          gold_price, gld_data, crash_score,
+                                          sp500_price, sp500_high)
+
+    # 為替
     forex = evaluate_forex(usdjpy)
 
-    # 売りシグナル判定
-    sell = evaluate_sell_signals(
-        crash_score=crash_score,
-        fear_greed=fear_greed,
-        vix=vix,
-        rsi=rsi,
-        sp500_price=sp500_price,
-        sp500_high=sp500_high,
-        gold_price=gold_price,
-        gold_high_52w=gold_high_52w_futures,
-    )
+    # ヘッドライン生成
+    headline = _build_headline(action_list, macro, portfolio)
 
-    # 最も緊急度の高いアクションをヘッドラインに（COMPLETE除外 + 売り優先）
-    if sell["sell_level"] in ("SELL_STRONG", "SELL_PARTIAL"):
-        headline = f"利確を検討してください → {sell['action']}"
+    # サマリー
+    ready_buys = sum(1 for a in action_list if a["type"] == "buy" and a.get("ready"))
+    active_sells = sum(1 for a in action_list if a["type"] == "sell")
+    if active_sells > 0:
+        summary = f"売りシグナル{active_sells}件発動中。利確を検討してください"
+    elif ready_buys > 0:
+        summary = f"買い発動{ready_buys}件。注文準備を"
+    elif macro["met_count"] >= 2:
+        summary = f"マクロ過熱{macro['met_count']}/5。利確準備を始めるタイミング"
     else:
-        all_sectors = [energy, semi, broad, gold]
-        active_sectors = [s for s in all_sectors if s.get("signal") != "COMPLETE"]
-        urgency_order = {"high": 0, "medium": 1, "low": 2, "none": 3}
-        active_sectors.sort(key=lambda s: urgency_order.get(s.get("urgency", "none"), 3))
-
-        if active_sectors:
-            top = active_sectors[0]
-            if top["urgency"] == "high":
-                headline = f"今すぐ注文してください → {top['action']}"
-            elif top["urgency"] == "medium":
-                headline = f"今週中に注文を検討 → {top['action']}"
-            elif top["urgency"] == "low":
-                headline = f"まだ買わないでください。もう少しで条件達成です"
-            else:
-                headline = "まだ買わないでください。条件が揃うまで待ちましょう"
-        else:
-            headline = "全セクター投入完了。売りタイミングの判定に注目してください"
-
-    # 全体サマリー
-    all_buy_sectors = [energy, semi, broad, gold]
-    active_signals = [s for s in all_buy_sectors if s["signal"] in ("BUY", "STRONG_BUY")]
-    complete_signals = [s for s in all_buy_sectors if s["signal"] == "COMPLETE"]
-    if sell["sell_level"] in ("SELL_STRONG", "SELL_PARTIAL"):
-        summary = f"売りシグナル発動中（{sell['met_count']}/{sell['total_conditions']}条件成立）"
-    elif active_signals:
-        summary = f"{len(active_signals)}セクターで買いシグナル発動中"
-    elif any(s["signal"] == "CONSIDER" for s in all_buy_sectors):
-        summary = "一部セクターで買い検討圏。条件が整えば投入"
-    elif complete_signals:
-        done = _count_done_tranches()
-        total = len(STRATEGY["tranches"])
-        summary = f"NISA {done}/{total}回投入済み。残りセクターは待機中"
-    else:
-        summary = "全セクター待機中。暴落を待つ戦略を継続"
-
-    # 底打ちシグナルとの連動
-    bottom_note = None
-    if bottom_signals:
-        met = bottom_signals.get("met_count", 0)
-        total = bottom_signals.get("total_conditions", 7)
-        if met >= 5:
-            bottom_note = f"底打ちシグナル {met}/{total} 成立。残り全額投入を強く推奨"
-        elif met >= 3:
-            bottom_note = f"底打ちシグナル {met}/{total} 成立。買い場が近い"
-        elif bottom_signals.get("selling_climax"):
-            bottom_note = "セリングクライマックス検出。歴史的買い場の可能性"
+        summary = "全件待機中。条件到達まで待ちましょう"
 
     return {
         "headline": headline,
         "summary": summary,
-        "bottom_note": bottom_note,
-        "sectors": {
-            "energy": energy,
-            "semiconductor": semi,
-            "broad_market": broad,
-            "gold": gold,
-        },
-        "sell_signals": sell,
+        "action_list": action_list,
+        "portfolio": portfolio,
+        "buyback": buyback,
+        "tsumitate_warning": tsumitate_warning,
+        "macro_signals": macro,
+        "sectors": sectors_info,
         "forex": forex,
-        "strategy_params": STRATEGY,
-        "settlement_lag": SETTLEMENT_LAG,
+        "bottom_note": _bottom_note(bottom_signals),
         "updated_at": datetime.now().isoformat(),
+        "symbols": SYMBOLS,
+        "accounts": ACCOUNTS,
     }
 
 
-def _unknown(sector: str, error: str) -> dict:
-    return {
-        "sector": sector,
-        "signal": "UNKNOWN",
-        "action": f"判定不能: {error}",
-        "urgency": "none",
-        "reason": error,
-        "data": {},
-    }
+def _build_headline(action_list, macro, portfolio):
+    """最優先アクションをヘッドラインに"""
+    if not action_list:
+        return "条件待機中。今日は動かなくて大丈夫です"
+
+    top = action_list[0]
+    if top["type"] == "sell":
+        return f"【売り】{top['short_name'] if 'short_name' in top else top['symbol_name']}を{top.get('amount_text', '')}利確"
+    if top["type"] == "buy":
+        return f"【買い発動】{top['account']} {top.get('short_name', '')}を{top['amount_text']}注文"
+    if top["type"] == "buy_wait":
+        # 買い待機の中で一番進捗の良いものを返す
+        return f"今日は動かなくて大丈夫。次の1手: {top['account']} {top.get('short_name', '')}（{top['progress_text']}）"
+    if top["type"] == "watch":
+        return f"利確準備: {top.get('short_name', '')}の売り注文を用意"
+    return "条件待機中"
+
+
+def _bottom_note(bottom_signals):
+    if not bottom_signals:
+        return None
+    met = bottom_signals.get("met_count", 0)
+    total = bottom_signals.get("total_conditions", 7)
+    if met >= 5:
+        return f"底打ちシグナル {met}/{total} 成立。残り全額投入を強く推奨"
+    if met >= 3:
+        return f"底打ちシグナル {met}/{total} 成立。買い場が近い"
+    if bottom_signals.get("selling_climax"):
+        return "セリングクライマックス検出。歴史的買い場の可能性"
+    return None
+
+
+# ============================================================
+# 後方互換: 旧コードからの参照用（段階的に削除）
+# ============================================================
+STRATEGY = {
+    "total_budget": 2970000,
+    "nisa_growth_budget": ACCOUNTS["nisa_growth"]["annual_limit"],
+    "nisa_tsumitate_budget": ACCOUNTS["nisa_tsumitate"]["annual_limit"],
+    "tokutei_budget": ACCOUNTS["tokutei"]["annual_limit"],
+    "brokers": {"nisa": "SBI証券（新NISA）", "tokutei": "楽天証券（特定口座）"},
+    "notes": "つみたて投資枠120万は個人で自動積立（ツール対象外）。管理対象は成長投資枠+特定口座の297万",
+    # 旧UIが参照する tranches を生成（done=PORTFOLIO、pending=PLAN）
+    "tranches": [
+        *[
+            {
+                "label": h.get("note", "投入済み"),
+                "amount": h["invested_amount"],
+                "account": "nisa" if h["account"] == "nisa_growth" else "tokutei",
+                "status": "done",
+                "date": h.get("invested_date"),
+                "ticker": SYMBOLS.get(h["symbol"], {}).get("short_name", h["symbol"]),
+            }
+            for h in PORTFOLIO
+        ],
+        *[
+            {
+                "label": p["label"],
+                "amount": p["amount"],
+                "account": "nisa" if p["account"] == "nisa_growth" else "tokutei",
+                "status": "pending",
+                "ticker": SYMBOLS.get(p["symbol"], {}).get("short_name", p["symbol"]),
+                "condition": p["condition_text"],
+            }
+            for p in PLAN
+        ],
+    ],
+}
+
+SETTLEMENT_LAG = {
+    key: {"name": sym["name"], "days": sym["settlement_days"], "note": sym.get("note", "")}
+    for key, sym in SYMBOLS.items()
+}

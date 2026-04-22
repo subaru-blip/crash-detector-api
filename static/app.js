@@ -1,24 +1,32 @@
-/* 投資ナビ - Frontend App */
+/* 投資ナビ - Frontend App v2（2026-04-22 刷新）
+ * 新API構造: action_list / portfolio / buyback / tsumitate_warning / macro_signals
+ */
 
 const API_BASE = location.origin;
 
 const INDICATOR_CONFIG = {
-  vix: { name: '恐怖指数（VIX）', unit: '', desc: '高いほど市場が怖がっている' },
-  fear_greed: { name: '市場心理', unit: '', desc: '低いほど悲観的（0-100）' },
-  rsi: { name: '売られすぎ度', unit: '', desc: '30以下は売られすぎ' },
-  credit_spread: { name: '信用リスク', unit: 'bps', desc: '高いほど企業の倒産リスク上昇' },
-  ma_deviation: { name: '平均からの乖離', unit: '%', desc: 'マイナスが大きいほど割安' },
-  yield_curve: { name: '景気見通し', unit: '', desc: 'マイナスは景気後退サイン' },
+  vix: { name: '恐怖指数（VIX）', desc: '高いほど市場が怖がっている' },
+  fear_greed: { name: '市場心理', desc: '低いほど悲観的（0-100）' },
+  rsi: { name: '売られすぎ度', desc: '30以下は売られすぎ、75以上は買われすぎ' },
+  credit_spread: { name: '信用リスク', desc: '高いほど企業の倒産リスク上昇' },
+  ma_deviation: { name: '平均からの乖離', desc: 'マイナスが大きいほど割安' },
+  yield_curve: { name: '景気見通し', desc: 'マイナスは景気後退サイン' },
 };
 
-const SIGNAL_STYLES = {
-  STRONG_BUY: { color: '#ef4444', bg: 'rgba(239,68,68,0.15)', text: '今すぐ注文', icon: '🔴' },
-  BUY:        { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', text: '今週中に注文',  icon: '🟡' },
-  CONSIDER:   { color: '#3b82f6', bg: 'rgba(59,130,246,0.15)', text: 'まだ買わない',  icon: '🔵' },
-  WATCH:      { color: '#64748b', bg: 'rgba(100,116,139,0.10)', text: 'まだ買わない', icon: '⚪' },
-  WAIT:       { color: '#475569', bg: 'rgba(71,85,105,0.10)',  text: 'まだ買わない',  icon: '⚪' },
-  COMPLETE:   { color: '#22c55e', bg: 'rgba(34,197,94,0.15)',  text: '✅ 投入済み',   icon: '✅' },
-  UNKNOWN:    { color: '#475569', bg: 'rgba(71,85,105,0.10)',  text: '判定できず',    icon: '❓' },
+const URGENCY_STYLES = {
+  high:   { color: '#ef4444', bg: 'rgba(239,68,68,0.15)',  label: '今すぐ' },
+  medium: { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', label: '今週中' },
+  low:    { color: '#3b82f6', bg: 'rgba(59,130,246,0.12)', label: '準備' },
+  none:   { color: '#64748b', bg: 'rgba(100,116,139,0.10)',label: '待機' },
+};
+
+const ACTION_TYPE_LABEL = {
+  sell: '売り',
+  buy: '買い発動',
+  buy_wait: '買い待機',
+  buyback: '買い戻し',
+  watch: '利確準備',
+  hold: '保有継続',
 };
 
 const GEO_NAMES = { wti: '原油', gold: '金', usdjpy: 'ドル/円' };
@@ -29,6 +37,12 @@ async function fetchJSON(path) {
   const res = await fetch(API_BASE + path);
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
+}
+
+function fmtYen(n) {
+  if (n == null) return '--';
+  if (n >= 10000) return `${(n / 10000).toFixed(0)}万円`;
+  return `${n.toLocaleString()}円`;
 }
 
 function initGauge() {
@@ -57,183 +71,306 @@ function updateGauge(score, color) {
 }
 
 // ============================================================
-// 今日の判断パネル
+// ヘッドライン
 // ============================================================
 function renderToday(advice) {
-  if (!advice) return;
-
   const headline = document.getElementById('todayHeadline');
   const summary = document.getElementById('todaySummary');
   const bottomNote = document.getElementById('todayBottomNote');
   const card = document.getElementById('todayCard');
 
-  // ヘッドラインを初心者向けに
-  headline.textContent = advice.headline;
-  summary.textContent = advice.summary;
+  headline.textContent = advice.headline || '条件待機中';
+  summary.textContent = advice.summary || '';
 
-  // 緊急度で色を変える
-  const sectors = Object.values(advice.sectors);
-  const urgencyOrder = { high: 0, medium: 1, low: 2, none: 3 };
-  sectors.sort((a, b) => (urgencyOrder[a.urgency] || 3) - (urgencyOrder[b.urgency] || 3));
-  const top = sectors[0];
-  const style = SIGNAL_STYLES[top?.signal] || SIGNAL_STYLES.WAIT;
+  // 最優先アクションの緊急度で色を変える
+  const top = (advice.action_list || [])[0];
+  const urgency = top ? top.urgency : 'none';
+  const style = URGENCY_STYLES[urgency] || URGENCY_STYLES.none;
   card.style.borderColor = style.color;
   card.style.background = `linear-gradient(135deg, ${style.bg}, var(--bg-card))`;
 
   if (advice.bottom_note) {
     bottomNote.style.display = 'block';
     bottomNote.textContent = advice.bottom_note;
+  } else {
+    bottomNote.style.display = 'none';
   }
 }
 
 // ============================================================
-// セクター別アドバイス
+// つみたて枠警告
 // ============================================================
-function renderAdviceSectors(advice) {
-  const section = document.getElementById('adviceSection');
-  const container = document.getElementById('adviceSectors');
-  if (!section || !advice) return;
+function renderTsumitateWarning(warn) {
+  const section = document.getElementById('tsumitateWarning');
+  if (!warn) { section.style.display = 'none'; return; }
   section.style.display = 'block';
+  const card = document.getElementById('tsumitateCard');
+  card.className = 'tsumitate-card ' + (warn.level === 'WARNING' ? 'tsu-warning' : 'tsu-caution');
+  document.getElementById('tsumitateHeadline').textContent = warn.headline;
+  document.getElementById('tsumitateDetail').textContent = warn.detail;
+  document.getElementById('tsumitateGuide').textContent = warn.guide || '';
+  const list = document.getElementById('tsumitateList');
+  list.innerHTML = '';
+  if (warn.holdings_note) {
+    for (const [key, text] of Object.entries(warn.holdings_note)) {
+      const li = document.createElement('div');
+      li.className = 'tsumitate-item';
+      li.textContent = '・' + text;
+      list.appendChild(li);
+    }
+  }
+}
+
+// ============================================================
+// 今日のアクション（action_list）
+// ============================================================
+function renderActionList(actions) {
+  const container = document.getElementById('actionList');
   container.innerHTML = '';
+  if (!actions || actions.length === 0) {
+    container.innerHTML = '<div class="action-empty">アクションなし</div>';
+    return;
+  }
 
-  const sectorNames = {
-    energy: 'エネルギー（石油・ガス）',
-    semiconductor: '半導体（NVIDIA・AI）',
-    broad_market: '市場全体（S&P500）',
-    gold: 'ゴールド（金）',
-  };
-
-  for (const [key, sector] of Object.entries(advice.sectors)) {
-    const style = SIGNAL_STYLES[sector.signal] || SIGNAL_STYLES.UNKNOWN;
+  for (const a of actions) {
+    const style = URGENCY_STYLES[a.urgency] || URGENCY_STYLES.none;
+    const typeLabel = ACTION_TYPE_LABEL[a.type] || a.type;
     const card = document.createElement('div');
-    card.className = 'sector-advice-card';
+    card.className = 'action-card';
     card.style.borderLeftColor = style.color;
 
-    // 約定ラグ情報
-    let lagHtml = '';
-    if (sector.signal === 'BUY' || sector.signal === 'STRONG_BUY' || sector.signal === 'CONSIDER') {
-      const lagInfo = getLagInfo(key);
-      if (lagInfo) {
-        lagHtml = `<div class="lag-info">注文から約${lagInfo.days}営業日で購入完了</div>`;
-      }
+    const readyBadge = a.ready
+      ? `<span class="action-badge ready" style="background:${style.color}">${style.label}</span>`
+      : `<span class="action-badge waiting">待機</span>`;
+
+    // 注文手順詳細
+    let orderDetail = '';
+    if (a.broker) {
+      orderDetail = `
+        <div class="action-order">
+          <span class="action-order-item"><b>証券会社:</b> ${a.broker}</span>
+          ${a.broker_section ? `<span class="action-order-item"><b>画面:</b> ${a.broker_section}</span>` : ''}
+          ${a.search_keyword ? `<span class="action-order-item"><b>検索:</b> ${a.search_keyword}</span>` : ''}
+          ${a.order_method ? `<span class="action-order-item"><b>注文:</b> ${a.order_method}</span>` : ''}
+        </div>
+      `;
     }
 
-    // SOXLの追加情報
-    let soxlHtml = '';
-    if (sector.soxl) {
-      const sStyle = SIGNAL_STYLES[sector.soxl.signal] || SIGNAL_STYLES.WATCH;
-      soxlHtml = `<div class="soxl-note" style="border-color:${sStyle.color}">${sStyle.icon} ${sector.soxl.action}</div>`;
+    // 進捗（買い待機の場合）
+    let progressHtml = '';
+    if (a.progress_text) {
+      progressHtml = `<div class="action-progress">${a.progress_text}</div>`;
     }
 
-    // トランシェ消化状況（広域市場のみ）
-    let trancheHtml = '';
-    if (key === 'broad_market' && advice.strategy_params?.tranches) {
-      const tranches = advice.strategy_params.tranches;
-      const items = tranches.map(t => {
-        if (t.status === 'done') {
-          return `<span class="tranche-item tranche-done">✅ ${t.label}（${t.ticker || 'S&P500'}・${(t.amount/10000).toFixed(0)}万）${t.date || ''}</span>`;
-        } else {
-          return `<span class="tranche-item tranche-pending">⬜ ${t.label}（${(t.amount/10000).toFixed(0)}万・待機中）</span>`;
-        }
-      }).join('');
-      trancheHtml = `<div class="tranche-status">${items}</div>`;
+    // 税金注記
+    let taxHtml = '';
+    if (a.tax_note) {
+      taxHtml = `<div class="action-tax">${a.tax_note}</div>`;
     }
 
     card.innerHTML = `
-      <div class="sa-header">
-        <span class="sa-name">${sectorNames[key] || sector.sector}</span>
-        <span class="sa-badge" style="background:${style.color}">${style.text}</span>
+      <div class="action-header">
+        <span class="action-type type-${a.type}">${typeLabel}</span>
+        ${readyBadge}
       </div>
-      <div class="sa-action">${sector.action}</div>
-      <div class="sa-reason">${sector.reason}</div>
-      ${trancheHtml}
-      ${soxlHtml}
-      ${lagHtml}
+      <div class="action-title">${a.title}</div>
+      ${a.condition_text ? `<div class="action-condition">条件: ${a.condition_text}</div>` : ''}
+      ${progressHtml}
+      ${a.detail ? `<div class="action-detail">${a.detail}</div>` : ''}
+      ${orderDetail}
+      ${taxHtml}
+    `;
+    container.appendChild(card);
+  }
+}
+
+// ============================================================
+// ポートフォリオ（口座枠別）
+// ============================================================
+function renderPortfolio(portfolio) {
+  const container = document.getElementById('portfolioCards');
+  container.innerHTML = '';
+  if (!portfolio || !portfolio.accounts) return;
+
+  const accounts = portfolio.accounts;
+  for (const [key, acc] of Object.entries(accounts)) {
+    const card = document.createElement('div');
+    card.className = 'portfolio-card';
+
+    // 使用状況バー
+    const usedPct = Math.min(100, (acc.used / acc.total) * 100);
+
+    // 銘柄ごとの売り判定表示
+    const holdingsHtml = (acc.holdings && acc.holdings.length > 0)
+      ? acc.holdings.map(h => {
+          const profitColor = h.profit_pct != null
+            ? (h.profit_pct >= 0 ? 'color-green' : 'color-red')
+            : 'color-muted';
+          const profitText = h.profit_pct != null
+            ? `${h.profit_pct >= 0 ? '+' : ''}${h.profit_pct.toFixed(1)}%`
+            : '--';
+          const valueText = h.estimated_value ? fmtYen(h.estimated_value) : fmtYen(h.invested_amount);
+          const sellDecisionBadge = getDecisionBadge(h.decision);
+          return `
+            <div class="holding-row">
+              <div class="holding-top">
+                <span class="holding-name">${h.short_name}</span>
+                ${sellDecisionBadge}
+              </div>
+              <div class="holding-middle">
+                <span class="holding-invested">投入 ${fmtYen(h.invested_amount)}</span>
+                <span class="holding-value">現在 ${valueText}</span>
+                <span class="holding-profit ${profitColor}">${profitText}</span>
+              </div>
+              <div class="holding-reason">${h.reason || ''}</div>
+            </div>
+          `;
+        }).join('')
+      : '<div class="holding-empty">未投入</div>';
+
+    card.innerHTML = `
+      <div class="portfolio-header">
+        <div>
+          <div class="portfolio-label">${acc.label}</div>
+          <div class="portfolio-broker">${acc.broker}${acc.tax_free ? ' / 非課税' : ' / 課税20.315%'}</div>
+        </div>
+        <div class="portfolio-amounts">
+          <div class="portfolio-remaining">残り ${fmtYen(acc.remaining)}</div>
+          <div class="portfolio-used">使用 ${fmtYen(acc.used)} / ${fmtYen(acc.total)}</div>
+        </div>
+      </div>
+      <div class="portfolio-bar">
+        <div class="portfolio-bar-fill" style="width:${usedPct}%"></div>
+      </div>
+      <div class="portfolio-holdings">${holdingsHtml}</div>
+    `;
+    container.appendChild(card);
+  }
+}
+
+function getDecisionBadge(decision) {
+  const map = {
+    'HOLD':        { color: '#22c55e', text: '保有継続' },
+    'WATCH':       { color: '#3b82f6', text: '利確準備' },
+    'SELL_30':     { color: '#f59e0b', text: '30%利確' },
+    'SELL_50':     { color: '#f59e0b', text: '50%利確' },
+    'SELL_70':     { color: '#ef4444', text: '70%利確' },
+    'SELL_HALF':   { color: '#f59e0b', text: '半分利確' },
+    'SELL_ALL':    { color: '#ef4444', text: '全利確' },
+  };
+  const s = map[decision] || { color: '#64748b', text: '--' };
+  return `<span class="holding-badge" style="background:${s.color}">${s.text}</span>`;
+}
+
+// ============================================================
+// 買い戻しキュー
+// ============================================================
+function renderBuyback(buyback) {
+  const section = document.getElementById('buybackSection');
+  if (!buyback || !buyback.entries || buyback.entries.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  const card = document.getElementById('buybackCard');
+
+  let html = `<div class="buyback-summary">
+    <span>予約残高: <b>${fmtYen(buyback.total_pending)}</b></span>
+    <span>予約件数: <b>${buyback.queue_count}</b></span>
+  </div>`;
+
+  for (const entry of buyback.entries) {
+    html += `<div class="buyback-entry">
+      <div class="buyback-entry-header">
+        <span class="buyback-sold">${entry.sold_date} ${fmtYen(entry.sold_amount)}利確分</span>
+        <span class="buyback-reason">${entry.reason || ''}</span>
+      </div>
+      <div class="buyback-stages">`;
+    for (const stage of entry.stages) {
+      const status = stage.status === 'pending' ? '待機中' : (stage.status === 'done' ? '実行済み' : stage.status);
+      const statusClass = stage.status === 'pending' ? 'stage-pending' : 'stage-done';
+      html += `<div class="buyback-stage ${statusClass}">
+        <div class="stage-top">
+          <span class="stage-label">${stage.label}</span>
+          <span class="stage-amount">${fmtYen(stage.amount)}</span>
+          <span class="stage-status">${status}</span>
+        </div>
+        <div class="stage-condition">${stage.condition_text}</div>
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  card.innerHTML = html;
+}
+
+// ============================================================
+// マクロ過熱シグナル
+// ============================================================
+function renderMacro(macro) {
+  if (!macro) return;
+  const label = document.getElementById('macroLabel');
+  const count = document.getElementById('macroCount');
+  const conditions = document.getElementById('macroConditions');
+
+  const met = macro.met_count || 0;
+  count.textContent = `${met}/${macro.total || 5}`;
+
+  if (met >= 4) { label.textContent = '過熱警戒'; label.className = 'macro-label hot'; }
+  else if (met >= 2) { label.textContent = 'やや過熱'; label.className = 'macro-label warm'; }
+  else { label.textContent = '平常'; label.className = 'macro-label cool'; }
+
+  conditions.innerHTML = '';
+  for (const s of macro.signals || []) {
+    const icon = s.met ? (s.severity === 'high' ? '🔴' : '🟡') : '⚪';
+    const row = document.createElement('div');
+    row.className = 'macro-row' + (s.met ? ' met' : '');
+    row.innerHTML = `
+      <div class="macro-row-top">
+        <span>${icon} ${s.label}</span>
+      </div>
+      <div class="macro-row-detail">${s.detail}</div>
+    `;
+    conditions.appendChild(row);
+  }
+}
+
+// ============================================================
+// セクター参考情報
+// ============================================================
+function renderSectorInfo(sectors, forex) {
+  const container = document.getElementById('sectorInfoCards');
+  container.innerHTML = '';
+  if (!sectors) return;
+
+  for (const [key, sec] of Object.entries(sectors)) {
+    const card = document.createElement('div');
+    card.className = 'sector-info-card';
+    card.innerHTML = `
+      <div class="sector-info-label">${sec.label}</div>
+      <div class="sector-info-status">${sec.status}</div>
+      <div class="sector-info-comment">${sec.comment}</div>
     `;
     container.appendChild(card);
   }
 
-  // 為替
   const forexEl = document.getElementById('adviceForex');
-  if (advice.forex && advice.forex.usdjpy) {
+  if (forex && forex.usdjpy) {
     forexEl.style.display = 'block';
-    const fx = advice.forex;
     const riskColors = { HIGH: '#ef4444', MEDIUM: '#f59e0b', LOW: '#22c55e', FAVORABLE: '#06b6d4' };
     const riskLabels = { HIGH: '注意', MEDIUM: 'やや注意', LOW: '問題なし', FAVORABLE: '有利' };
     forexEl.innerHTML = `
       <div class="forex-simple">
-        <span>ドル円 ¥${fx.usdjpy.toFixed(0)}</span>
-        <span class="forex-badge" style="background:${riskColors[fx.risk_level]}">${riskLabels[fx.risk_level]}</span>
-        <span class="forex-note-text">${fx.opportunity}</span>
+        <span>ドル円 ¥${forex.usdjpy.toFixed(1)}</span>
+        <span class="forex-badge" style="background:${riskColors[forex.risk_level]}">${riskLabels[forex.risk_level]}</span>
+        <span class="forex-note-text">${forex.opportunity}</span>
       </div>
     `;
   }
 }
 
-function getLagInfo(sectorKey) {
-  const map = {
-    energy: { days: 1, note: '海外ETF（XLE）は翌営業日に約定' },
-    semiconductor: { days: 1, note: '米国株（NVIDIA）は翌営業日に約定' },
-    broad_market: { days: 2, note: '投資信託（eMAXIS Slim）は2営業日後に約定' },
-    gold: { days: 2, note: 'ゴールドETF（425A）は2営業日後に約定' },
-  };
-  return map[sectorKey];
-}
-
 // ============================================================
-// 売りシグナルパネル
-// ============================================================
-
-const SELL_STYLES = {
-  SELL_STRONG: { color: '#ef4444', bg: 'rgba(239,68,68,0.15)', text: '利確を強く推奨', border: '#ef4444' },
-  SELL_PARTIAL: { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)', text: '一部利確を検討', border: '#f59e0b' },
-  WATCH:       { color: '#3b82f6', bg: 'rgba(59,130,246,0.10)', text: '利確の準備', border: '#3b82f6' },
-  HOLD:        { color: '#22c55e', bg: 'rgba(34,197,94,0.08)', text: '保有継続', border: '#22c55e' },
-};
-
-function renderSellSignals(sellData) {
-  const section = document.getElementById('sellSection');
-  if (!section || !sellData) return;
-  section.style.display = 'block';
-
-  const style = SELL_STYLES[sellData.sell_level] || SELL_STYLES.HOLD;
-
-  const card = document.getElementById('sellCard');
-  card.style.borderColor = style.border;
-  card.style.background = `linear-gradient(135deg, ${style.bg}, var(--bg-card))`;
-
-  document.getElementById('sellBadge').textContent = style.text;
-  document.getElementById('sellBadge').style.background = style.color;
-  document.getElementById('sellHeadline').textContent = sellData.headline;
-  document.getElementById('sellAction').textContent = sellData.action;
-
-  // 条件リスト
-  const list = document.getElementById('sellConditions');
-  list.innerHTML = '';
-  for (const sig of sellData.signals) {
-    const icon = sig.met ? (sig.severity === 'high' ? '🔴' : '🟡') : '⚪';
-    const item = document.createElement('div');
-    item.className = 'sell-condition-item';
-    item.innerHTML = `<span>${icon} ${sig.condition}</span><span class="sell-detail">${sig.detail}</span>`;
-    list.appendChild(item);
-  }
-
-  // カウント
-  document.getElementById('sellCount').textContent = `${sellData.met_count}/${sellData.total_conditions}`;
-
-  // ゴールド個別売りシグナル
-  const goldSell = document.getElementById('goldSellNote');
-  if (sellData.gold_sell && goldSell) {
-    goldSell.style.display = 'block';
-    const gs = sellData.gold_sell;
-    goldSell.innerHTML = `<span class="sa-badge" style="background:${gs.signal === 'SELL_PARTIAL' ? '#f59e0b' : '#3b82f6'}">${gs.signal === 'SELL_PARTIAL' ? '利確' : '準備'}</span> ${gs.action}`;
-  } else if (goldSell) {
-    goldSell.style.display = 'none';
-  }
-}
-
-// ============================================================
-// 既存パネル（指標・セクター・監視銘柄・地政学）
+// 詳細データ（既存）
 // ============================================================
 function getIndicatorStatus(key, value) {
   if (value == null) return { text: '--', cls: 'status-neutral' };
@@ -241,12 +378,14 @@ function getIndicatorStatus(key, value) {
     if (value >= 40) return { text: 'かなり怖い', cls: 'status-danger' };
     if (value >= 30) return { text: '不安', cls: 'status-warning' };
     if (value >= 20) return { text: 'ふつう', cls: 'status-neutral' };
+    if (value <= 12) return { text: '油断', cls: 'status-hot' };
     return { text: '安心', cls: 'status-safe' };
   }
   if (key === 'fear_greed') {
     if (value <= 25) return { text: 'みんな怖がっている', cls: 'status-danger' };
     if (value <= 40) return { text: '不安気味', cls: 'status-warning' };
     if (value <= 60) return { text: 'ふつう', cls: 'status-neutral' };
+    if (value >= 80) return { text: '極度の強欲', cls: 'status-hot' };
     return { text: '楽観的', cls: 'status-hot' };
   }
   if (key === 'rsi') {
@@ -302,7 +441,7 @@ function renderSignals(bottomSignals) {
   const conditions = document.getElementById('signalConditions');
   const count = document.getElementById('signalCount');
   const title = document.getElementById('signalTitle');
-  if (!section || !conditions) return;
+  if (!section || !conditions || !bottomSignals) return;
 
   count.textContent = `${bottomSignals.met_count}/${bottomSignals.total_conditions}`;
   const labels = { 'セリングクライマックス': '大暴落の底（歴史的チャンス）', '底打ちシグナル': '底打ちの兆し', '条件未達': '底はまだ先' };
@@ -310,7 +449,7 @@ function renderSignals(bottomSignals) {
 
   section.style.display = 'block';
   conditions.innerHTML = '';
-  for (const [, cond] of Object.entries(bottomSignals.conditions)) {
+  for (const [, cond] of Object.entries(bottomSignals.conditions || {})) {
     const item = document.createElement('div');
     item.className = 'condition-item';
     const icon = cond.met ? '✅' : '⬜';
@@ -338,7 +477,11 @@ function renderWatchlist(data) {
   const grid = document.getElementById('watchlistGrid');
   if (!grid) return;
   grid.innerHTML = '';
-  const labels = { SOXL: '半導体3倍', NVDA: 'NVIDIA', TQQQ: 'ナスダック3倍', XLE: 'エネルギー', GLD: 'ゴールド' };
+  const labels = {
+    SPY: 'S&P500 ETF',
+    SOXL: '半導体3倍', NVDA: 'NVIDIA', TQQQ: 'ナスダック3倍',
+    XLE: 'エネルギー', GLD: 'ゴールド',
+  };
   for (const [ticker, info] of Object.entries(data)) {
     if (info.error) continue;
     const dd = info.drawdown_pct;
@@ -412,10 +555,14 @@ async function refreshData() {
     renderGeo(geoData);
 
     if (adviceData && adviceData.advice) {
-      renderToday(adviceData.advice);
-      renderAdviceSectors(adviceData.advice);
-      renderSellSignals(adviceData.advice.sell_signals);
-      loadBudget(adviceData.advice.strategy_params);
+      const advice = adviceData.advice;
+      renderToday(advice);
+      renderTsumitateWarning(advice.tsumitate_warning);
+      renderActionList(advice.action_list);
+      renderPortfolio(advice.portfolio);
+      renderBuyback(advice.buyback);
+      renderMacro(advice.macro_signals);
+      renderSectorInfo(advice.sectors, advice.forex);
     }
   } catch (e) {
     console.error('Data fetch error:', e);
@@ -423,68 +570,6 @@ async function refreshData() {
     document.getElementById('updateTime').textContent = 'エラー';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '更新'; }
-  }
-}
-
-// ============================================================
-// 資金状況（APIのstrategy_paramsから取得。Claude Codeで報告→自動反映）
-// ============================================================
-
-function loadBudget(strategyParams) {
-  const fmt = (n) => {
-    if (n >= 10000) return `${(n / 10000).toFixed(0)}万円`;
-    return `${n.toLocaleString()}円`;
-  };
-
-  if (!strategyParams) {
-    document.getElementById('totalRemaining').textContent = '読み込み中...';
-    return;
-  }
-
-  const tranches = strategyParams.tranches || [];
-  const nisaBudget = strategyParams.nisa_growth_budget || 2400000;
-  const tokuteiBudget = strategyParams.tokutei_budget || 570000;
-
-  let nisaUsed = 0, tokuteiUsed = 0;
-  const doneList = [];
-  for (const t of tranches) {
-    if (t.status === 'done') {
-      if (t.account === 'nisa') nisaUsed += t.amount;
-      if (t.account === 'tokutei') tokuteiUsed += t.amount;
-      doneList.push(t);
-    }
-  }
-
-  const nisaRemain = nisaBudget - nisaUsed;
-  const tokuteiRemain = tokuteiBudget - tokuteiUsed;
-
-  document.getElementById('nisaRemaining').textContent = `残り ${fmt(nisaRemain)}`;
-  document.getElementById('tokuteiRemaining').textContent = `残り ${fmt(tokuteiRemain)}`;
-  document.getElementById('totalRemaining').textContent = fmt(nisaRemain + tokuteiRemain);
-
-  const nisaStatus = document.getElementById('nisaStatus');
-  const tokuteiStatus = document.getElementById('tokuteiStatus');
-
-  if (nisaUsed > 0) {
-    nisaStatus.textContent = `${fmt(nisaUsed)} 投入済み`;
-    nisaStatus.style.color = '#22c55e';
-  } else {
-    nisaStatus.textContent = '未投入';
-  }
-
-  if (tokuteiUsed > 0) {
-    tokuteiStatus.textContent = `${fmt(tokuteiUsed)} 投入済み`;
-    tokuteiStatus.style.color = '#22c55e';
-  } else {
-    tokuteiStatus.textContent = '未投入';
-  }
-
-  // 投入履歴を表示
-  const historyEl = document.getElementById('investHistory');
-  if (historyEl && doneList.length > 0) {
-    historyEl.innerHTML = '<div class="history-title">投入履歴</div>' +
-      doneList.map(t => `<div class="history-item">✅ ${t.date || ''} ${t.ticker || t.label} ${fmt(t.amount)}</div>`).join('');
-    historyEl.style.display = 'block';
   }
 }
 
