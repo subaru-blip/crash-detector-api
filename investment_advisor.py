@@ -32,9 +32,13 @@ HYSTERESIS_BUFFER = {
     "gold_from_high": 3,      # 発動-10% → 解除-7%
     "nvda_from_high": 5,      # 発動-20% → 解除-15%（高ボラ）
     "wti_price_above": 5,     # 発動$120 → 解除$115
+    "wti_price_below": 5,     # 発動$90以下 → 解除$95
     "bottom_signals": 1,      # 発動3/7 → 解除2/7
     "gold_and_crash": {"gold_from_high": 3, "crash_max": 5},
     "soxl_and_crash": {"soxl_max": 3, "crash_max": 5},
+    # OR条件（どちらか発動 → 両方とも解除閾値に戻るまで active 継続）
+    "sp500_or_bottom": {"sp500_from_high": 3, "bottom_signals": 1},
+    "bottom_or_wti": {"bottom_signals": 1, "wti_price_below": 5},
 }
 
 
@@ -211,7 +215,8 @@ PLAN = [
     {
         "slot": "nisa_sp500_3", "account": "nisa_growth", "symbol": "emaxis_sp500",
         "amount": 600000, "label": "3回目投入（S&P500）", "priority": 2,
-        "condition": {"type": "sp500_from_high", "value": -15},
+        "condition": {"type": "sp500_or_bottom",
+                      "value": {"sp500_from_high": -15, "bottom_signals": 3}},
         "condition_text": "S&P500（SPY）が高値から-15%以下 or 底打ち3/7以上",
         "stage": "main",
     },
@@ -232,7 +237,8 @@ PLAN = [
     {
         "slot": "nisa_reserve", "account": "nisa_growth", "symbol": "emaxis_sp500",
         "amount": 300000, "label": "予備枠（S&P500 or 状況に応じて切替）", "priority": 5,
-        "condition": {"type": "bottom_signals", "value": 3},
+        "condition": {"type": "bottom_or_wti",
+                      "value": {"bottom_signals": 3, "wti_price_below": 90}},
         "condition_text": "底打ちシグナル3/7以上 or エネルギー急落（WTI $90以下）",
         "stage": "reserve",
     },
@@ -711,6 +717,8 @@ def _evaluate_raw_condition(ctype, cval, crash_score, sp500_from_high, gold_from
         return nvda_from_high is not None and nvda_from_high <= cval
     if ctype == "wti_price_above":
         return wti_price is not None and wti_price >= cval
+    if ctype == "wti_price_below":
+        return wti_price is not None and wti_price <= cval
     if ctype == "bottom_signals":
         return bottom_signals_met >= cval
     if ctype == "gold_and_crash":
@@ -723,6 +731,18 @@ def _evaluate_raw_condition(ctype, cval, crash_score, sp500_from_high, gold_from
         soxl_ok = soxl_price is not None and soxl_price <= cval["soxl_max"]
         crash_ok = crash_score is not None and crash_score <= cval["crash_max"]
         return soxl_ok and crash_ok
+    if ctype == "sp500_or_bottom":
+        sp = cval.get("sp500_from_high", -15)
+        bs = cval.get("bottom_signals", 3)
+        sp_ok = sp500_from_high is not None and sp500_from_high <= sp
+        bs_ok = bottom_signals_met >= bs
+        return sp_ok or bs_ok
+    if ctype == "bottom_or_wti":
+        bs = cval.get("bottom_signals", 3)
+        wti_th = cval.get("wti_price_below", 90)
+        bs_ok = bottom_signals_met >= bs
+        wti_ok = wti_price is not None and wti_price <= wti_th
+        return bs_ok or wti_ok
     return False
 
 
@@ -738,6 +758,8 @@ def _is_release_condition_met(ctype, cval, buffer, crash_score, sp500_from_high,
         return nvda_from_high is None or nvda_from_high > cval + buffer
     if ctype == "wti_price_above":
         return wti_price is None or wti_price < cval - buffer
+    if ctype == "wti_price_below":
+        return wti_price is None or wti_price > cval + buffer
     if ctype == "bottom_signals":
         return bottom_signals_met < cval - buffer
     if ctype == "gold_and_crash":
@@ -754,6 +776,23 @@ def _is_release_condition_met(ctype, cval, buffer, crash_score, sp500_from_high,
         soxl_released = soxl_price is None or soxl_price > cval["soxl_max"] + bs
         crash_released = crash_score is None or crash_score > cval["crash_max"] + bc
         return soxl_released and crash_released
+    if ctype == "sp500_or_bottom":
+        # OR条件: 両方とも解除閾値に戻ったときのみ解除
+        sp = cval.get("sp500_from_high", -15)
+        bs = cval.get("bottom_signals", 3)
+        b_sp = buffer.get("sp500_from_high", 3) if isinstance(buffer, dict) else 3
+        b_bs = buffer.get("bottom_signals", 1) if isinstance(buffer, dict) else 1
+        sp_released = sp500_from_high is None or sp500_from_high > sp + b_sp
+        bs_released = bottom_signals_met < bs - b_bs
+        return sp_released and bs_released
+    if ctype == "bottom_or_wti":
+        bs = cval.get("bottom_signals", 3)
+        wti_th = cval.get("wti_price_below", 90)
+        b_bs = buffer.get("bottom_signals", 1) if isinstance(buffer, dict) else 1
+        b_wti = buffer.get("wti_price_below", 5) if isinstance(buffer, dict) else 5
+        bs_released = bottom_signals_met < bs - b_bs
+        wti_released = wti_price is None or wti_price > wti_th + b_wti
+        return bs_released and wti_released
     return True
 
 
@@ -787,8 +826,20 @@ def _build_progress_text(ctype, cval, crash_score, sp500_from_high, gold_from_hi
         return f"SOXL {soxl_str}/${cval['soxl_max']} + Crash {crash_str}/{cval['crash_max']}"
     if ctype == "wti_price_above":
         return f"WTI現在${wti_price if wti_price else 'N/A'} / 目標${cval}超"
+    if ctype == "wti_price_below":
+        return f"WTI現在${wti_price if wti_price else 'N/A'} / 目標${cval}以下"
     if ctype == "bottom_signals":
         return f"底打ちシグナル{bottom_signals_met}/7 / 目標{cval}以上"
+    if ctype == "sp500_or_bottom":
+        sp = cval.get("sp500_from_high", -15)
+        bs = cval.get("bottom_signals", 3)
+        sp_str = f"{sp500_from_high:+.1f}%" if sp500_from_high is not None else "N/A"
+        return f"S&P500 {sp_str}/目標{sp}% ｜ 底打ち{bottom_signals_met}/7 目標{bs}以上（OR）"
+    if ctype == "bottom_or_wti":
+        bs = cval.get("bottom_signals", 3)
+        wti_th = cval.get("wti_price_below", 90)
+        wti_str = f"${wti_price}" if wti_price else "N/A"
+        return f"底打ち{bottom_signals_met}/7 目標{bs}以上 ｜ WTI {wti_str}/目標${wti_th}以下（OR）"
     return ""
 
 
