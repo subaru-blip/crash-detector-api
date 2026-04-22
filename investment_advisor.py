@@ -17,6 +17,26 @@ Investment Advisor Engine v2（2026-04-22 刷新）
 
 from datetime import datetime
 
+import state_tracker
+
+
+# ============================================================
+# ヒステリシス設定
+# ============================================================
+# 閾値境界で判定が揺れる問題を解消するためのバッファ。
+# - 下抜け型（from_high など）: 発動閾値 + buffer（％ポイント戻る）で解除
+# - 上抜け型（wti_price_above）: 発動閾値 − buffer（価格下がる）で解除
+# - 複合条件（gold_and_crash 等）: 両方が buffer 分戻ったら解除
+HYSTERESIS_BUFFER = {
+    "sp500_from_high": 3,     # 発動-10% → 解除-7%
+    "gold_from_high": 3,      # 発動-10% → 解除-7%
+    "nvda_from_high": 5,      # 発動-20% → 解除-15%（高ボラ）
+    "wti_price_above": 5,     # 発動$120 → 解除$115
+    "bottom_signals": 1,      # 発動3/7 → 解除2/7
+    "gold_and_crash": {"gold_from_high": 3, "crash_max": 5},
+    "soxl_and_crash": {"soxl_max": 3, "crash_max": 5},
+}
+
 
 # ============================================================
 # 銘柄マスタ
@@ -680,64 +700,167 @@ def build_portfolio_summary(macro, watchlist, geopolitical, sp500_price, rsi):
 # ============================================================
 # 投入計画の発動判定
 # ============================================================
-def evaluate_plan_condition(plan_item, crash_score, sp500_from_high, gold_from_high,
+def _evaluate_raw_condition(ctype, cval, crash_score, sp500_from_high, gold_from_high,
                              nvda_from_high, soxl_price, wti_price, bottom_signals_met):
-    """計画条件が満たされているかを判定し、進捗を返す"""
+    """バッファ無しの素の条件を評価。True=発動閾値到達"""
+    if ctype == "sp500_from_high":
+        return sp500_from_high is not None and sp500_from_high <= cval
+    if ctype == "gold_from_high":
+        return gold_from_high is not None and gold_from_high <= cval
+    if ctype == "nvda_from_high":
+        return nvda_from_high is not None and nvda_from_high <= cval
+    if ctype == "wti_price_above":
+        return wti_price is not None and wti_price >= cval
+    if ctype == "bottom_signals":
+        return bottom_signals_met >= cval
+    if ctype == "gold_and_crash":
+        g = cval.get("gold_from_high", -15)
+        c = cval.get("crash_max", 30)
+        gold_ok = gold_from_high is not None and gold_from_high <= g
+        crash_ok = crash_score is not None and crash_score <= c
+        return gold_ok and crash_ok
+    if ctype == "soxl_and_crash":
+        soxl_ok = soxl_price is not None and soxl_price <= cval["soxl_max"]
+        crash_ok = crash_score is not None and crash_score <= cval["crash_max"]
+        return soxl_ok and crash_ok
+    return False
+
+
+def _is_release_condition_met(ctype, cval, buffer, crash_score, sp500_from_high,
+                               gold_from_high, nvda_from_high, soxl_price, wti_price,
+                               bottom_signals_met):
+    """解除条件（buffer分だけ戻ったか）を評価。True=解除すべき"""
+    if ctype == "sp500_from_high":
+        return sp500_from_high is None or sp500_from_high > cval + buffer
+    if ctype == "gold_from_high":
+        return gold_from_high is None or gold_from_high > cval + buffer
+    if ctype == "nvda_from_high":
+        return nvda_from_high is None or nvda_from_high > cval + buffer
+    if ctype == "wti_price_above":
+        return wti_price is None or wti_price < cval - buffer
+    if ctype == "bottom_signals":
+        return bottom_signals_met < cval - buffer
+    if ctype == "gold_and_crash":
+        g = cval.get("gold_from_high", -15)
+        c = cval.get("crash_max", 30)
+        bg = buffer.get("gold_from_high", 3) if isinstance(buffer, dict) else 3
+        bc = buffer.get("crash_max", 5) if isinstance(buffer, dict) else 5
+        gold_released = gold_from_high is None or gold_from_high > g + bg
+        crash_released = crash_score is None or crash_score > c + bc
+        return gold_released and crash_released
+    if ctype == "soxl_and_crash":
+        bs = buffer.get("soxl_max", 3) if isinstance(buffer, dict) else 3
+        bc = buffer.get("crash_max", 5) if isinstance(buffer, dict) else 5
+        soxl_released = soxl_price is None or soxl_price > cval["soxl_max"] + bs
+        crash_released = crash_score is None or crash_score > cval["crash_max"] + bc
+        return soxl_released and crash_released
+    return True
+
+
+def _build_progress_text(ctype, cval, crash_score, sp500_from_high, gold_from_high,
+                          nvda_from_high, soxl_price, wti_price, bottom_signals_met):
+    """進捗テキスト（UI表示用）"""
+    if ctype == "sp500_from_high":
+        if sp500_from_high is not None:
+            diff = sp500_from_high - cval
+            return f"現在{sp500_from_high:+.1f}% / 目標{cval}% → あと{diff:+.1f}%"
+        return "S&P500データなし"
+    if ctype == "gold_from_high":
+        if gold_from_high is not None:
+            diff = gold_from_high - cval
+            return f"現在{gold_from_high:+.1f}% / 目標{cval}% → あと{diff:+.1f}%"
+        return "金データなし"
+    if ctype == "nvda_from_high":
+        if nvda_from_high is not None:
+            diff = nvda_from_high - cval
+            return f"現在{nvda_from_high:+.1f}% / 目標{cval}% → あと{diff:+.1f}%"
+        return "NVIDIAデータなし"
+    if ctype == "gold_and_crash":
+        g = cval.get("gold_from_high", -15)
+        c = cval.get("crash_max", 30)
+        gold_str = f"{gold_from_high:+.1f}%" if gold_from_high is not None else "N/A"
+        crash_str = f"{crash_score:.0f}" if crash_score is not None else "N/A"
+        return f"金{gold_str}/目標{g}% + Crash {crash_str}/{c}"
+    if ctype == "soxl_and_crash":
+        soxl_str = f"${soxl_price:.2f}" if soxl_price else "N/A"
+        crash_str = f"{crash_score:.0f}" if crash_score is not None else "N/A"
+        return f"SOXL {soxl_str}/${cval['soxl_max']} + Crash {crash_str}/{cval['crash_max']}"
+    if ctype == "wti_price_above":
+        return f"WTI現在${wti_price if wti_price else 'N/A'} / 目標${cval}超"
+    if ctype == "bottom_signals":
+        return f"底打ちシグナル{bottom_signals_met}/7 / 目標{cval}以上"
+    return ""
+
+
+def evaluate_plan_condition(plan_item, crash_score, sp500_from_high, gold_from_high,
+                             nvda_from_high, soxl_price, wti_price, bottom_signals_met,
+                             use_hysteresis=True):
+    """
+    計画条件を判定。ヒステリシスを適用する（デフォルト）。
+
+    返却:
+        met: 実際に発動状態か（ヒステリシス適用後）
+        progress_text: UI表示用の進捗テキスト
+        hysteresis_state: 'inactive' | 'just_fired' | 'active' | 'released' | 'disabled'
+            - inactive: 未発動、閾値未達
+            - just_fired: 今回の判定で発動（inactive→active）
+            - active: 発動中（解除閾値に戻っていない）
+            - released: 解除閾値まで戻って解除（active→inactive）
+            - disabled: ヒステリシス無効時
+    """
     cond = plan_item["condition"]
     ctype = cond["type"]
     cval = cond["value"]
+    key = f"plan:{plan_item.get('slot', ctype)}"
 
-    met = False
-    progress_text = ""
+    progress_text = _build_progress_text(
+        ctype, cval, crash_score, sp500_from_high, gold_from_high,
+        nvda_from_high, soxl_price, wti_price, bottom_signals_met,
+    )
+    fired_now = _evaluate_raw_condition(
+        ctype, cval, crash_score, sp500_from_high, gold_from_high,
+        nvda_from_high, soxl_price, wti_price, bottom_signals_met,
+    )
 
-    if ctype == "sp500_from_high":
-        if sp500_from_high is not None:
-            met = sp500_from_high <= cval
-            diff = sp500_from_high - cval  # 負の数同士。mustはcval=-10でsp500=-2なら、-2 - (-10) = +8 (まだ8%足りない)
-            progress_text = f"現在{sp500_from_high:+.1f}% / 目標{cval}% → あと{diff:+.1f}%"
-        else:
-            progress_text = "S&P500データなし"
-    elif ctype == "gold_from_high":
-        if gold_from_high is not None:
-            met = gold_from_high <= cval
-            diff = gold_from_high - cval
-            progress_text = f"現在{gold_from_high:+.1f}% / 目標{cval}% → あと{diff:+.1f}%"
-        else:
-            progress_text = "金データなし"
-    elif ctype == "gold_and_crash":
-        # 金が下落 AND Crash Score も低下した時に発動（本格買い用）
-        g_threshold = cval.get("gold_from_high", -15)
-        c_threshold = cval.get("crash_max", 30)
-        gold_ok = gold_from_high is not None and gold_from_high <= g_threshold
-        crash_ok = crash_score is not None and crash_score <= c_threshold
-        met = gold_ok and crash_ok
-        gold_str = f"{gold_from_high:+.1f}%" if gold_from_high is not None else "N/A"
-        crash_str = f"{crash_score:.0f}" if crash_score is not None else "N/A"
-        progress_text = f"金{gold_str}/目標{g_threshold}% + Crash {crash_str}/{c_threshold}"
-    elif ctype == "nvda_from_high":
-        if nvda_from_high is not None:
-            met = nvda_from_high <= cval
-            diff = nvda_from_high - cval
-            progress_text = f"現在{nvda_from_high:+.1f}% / 目標{cval}% → あと{diff:+.1f}%"
-        else:
-            progress_text = "NVIDIAデータなし"
-    elif ctype == "soxl_and_crash":
-        soxl_max = cval["soxl_max"]
-        crash_max = cval["crash_max"]
-        soxl_ok = soxl_price is not None and soxl_price <= soxl_max
-        crash_ok = crash_score is not None and crash_score <= crash_max
-        met = soxl_ok and crash_ok
-        soxl_str = f"${soxl_price:.2f}" if soxl_price else "N/A"
-        crash_str = f"{crash_score:.0f}" if crash_score is not None else "N/A"
-        progress_text = f"SOXL {soxl_str}/${soxl_max} + Crash {crash_str}/{crash_max}"
-    elif ctype == "wti_price_above":
-        met = wti_price is not None and wti_price >= cval
-        progress_text = f"WTI現在${wti_price if wti_price else 'N/A'} / 目標${cval}超"
-    elif ctype == "bottom_signals":
-        met = bottom_signals_met >= cval
-        progress_text = f"底打ちシグナル{bottom_signals_met}/7 / 目標{cval}以上"
+    if not use_hysteresis:
+        return {"met": fired_now, "progress_text": progress_text, "hysteresis_state": "disabled"}
 
-    return {"met": met, "progress_text": progress_text}
+    buffer = HYSTERESIS_BUFFER.get(ctype, 0)
+    prev_state = state_tracker.get_signal_state(key)
+
+    if prev_state == "active":
+        # 発動中 → 解除条件をチェック
+        released = _is_release_condition_met(
+            ctype, cval, buffer, crash_score, sp500_from_high, gold_from_high,
+            nvda_from_high, soxl_price, wti_price, bottom_signals_met,
+        )
+        if released:
+            state_tracker.set_signal_state(key, "inactive")
+            return {
+                "met": False,
+                "progress_text": progress_text + " ※解除閾値まで戻り発動解除",
+                "hysteresis_state": "released",
+            }
+        # 発動継続（ヒステリシス）
+        return {
+            "met": True,
+            "progress_text": progress_text + " ※発動継続（ヒステリシス）",
+            "hysteresis_state": "active",
+        }
+
+    # 未発動 → 通常判定
+    if fired_now:
+        state_tracker.set_signal_state(key, "active")
+        return {
+            "met": True,
+            "progress_text": progress_text + " ※今回発動",
+            "hysteresis_state": "just_fired",
+        }
+    return {
+        "met": False,
+        "progress_text": progress_text,
+        "hysteresis_state": "inactive",
+    }
 
 
 def build_action_list(macro, portfolio_summary, buyback_summary, crash_score, indicators,
@@ -826,12 +949,24 @@ def build_action_list(macro, portfolio_summary, buyback_summary, crash_score, in
 
         urgency = "medium" if result["met"] else "none"
         action_type = "buy" if result["met"] else "buy_wait"
+        hysteresis_state = result.get("hysteresis_state", "inactive")
+
+        # タイトル生成（ヒステリシス状態を反映）
+        if hysteresis_state == "active":
+            title_prefix = "【買い継続】"
+        elif hysteresis_state == "just_fired":
+            title_prefix = "【買い発動】"
+        elif hysteresis_state == "released":
+            title_prefix = "【解除】"
+        elif result["met"]:
+            title_prefix = "【買い発動】"
+        else:
+            title_prefix = "【買い待機】"
 
         actions.append({
             "type": action_type,
             "urgency": urgency,
-            "title": ("【買い発動】" if result["met"] else "【買い待機】")
-                     + f"{acc.get('label', plan['account'])} {plan['label']}",
+            "title": title_prefix + f"{acc.get('label', plan['account'])} {plan['label']}",
             "symbol_key": plan["symbol"],
             "symbol_name": sym.get("name", plan["symbol"]),
             "short_name": sym.get("short_name", plan["symbol"]),
@@ -850,6 +985,7 @@ def build_action_list(macro, portfolio_summary, buyback_summary, crash_score, in
             "priority": plan["priority"],
             "slot": plan["slot"],
             "is_leveraged": sym.get("is_leveraged", False),
+            "hysteresis_state": hysteresis_state,
         })
 
     # === 並び替え（緊急度 > ready > priority）===

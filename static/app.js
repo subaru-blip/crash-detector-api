@@ -143,6 +143,16 @@ function renderActionList(actions) {
       ? `<span class="action-badge ready" style="background:${style.color}">${style.label}</span>`
       : `<span class="action-badge waiting">待機</span>`;
 
+    // ヒステリシス状態バッジ（PLAN 系のみ付与される）
+    let hysteresisBadge = '';
+    if (a.hysteresis_state === 'just_fired') {
+      hysteresisBadge = `<span class="action-badge hysteresis just-fired" title="未発動→発動に遷移">今回発動</span>`;
+    } else if (a.hysteresis_state === 'active') {
+      hysteresisBadge = `<span class="action-badge hysteresis active" title="ヒステリシスで発動継続中。解除閾値まで戻ると解除">発動継続</span>`;
+    } else if (a.hysteresis_state === 'released') {
+      hysteresisBadge = `<span class="action-badge hysteresis released" title="解除閾値まで戻って発動解除">解除</span>`;
+    }
+
     // 注文手順詳細
     let orderDetail = '';
     if (a.broker) {
@@ -172,6 +182,7 @@ function renderActionList(actions) {
       <div class="action-header">
         <span class="action-type type-${a.type}">${typeLabel}</span>
         ${readyBadge}
+        ${hysteresisBadge}
       </div>
       <div class="action-title">${a.title}</div>
       ${a.condition_text ? `<div class="action-condition">条件: ${a.condition_text}</div>` : ''}

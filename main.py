@@ -27,6 +27,7 @@ from data_fetcher import (
 from crash_score import calculate_crash_score
 from investment_advisor import generate_advice
 from budget_tracker import get_budget_status, record_investment, get_investment_history
+import state_tracker
 
 load_dotenv()
 
@@ -222,6 +223,27 @@ def clear_cache():
     conn.commit()
     conn.close()
     return {"status": "cleared", "timestamp": datetime.now().isoformat()}
+
+
+@app.get("/api/signal-state")
+def get_signal_state():
+    """ヒステリシス状態の一覧（発動中シグナルの確認用）"""
+    return {
+        "states": state_tracker.get_all_states(),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.post("/api/signal-state/reset")
+def reset_signal_state(data: dict = None):
+    """ヒステリシス状態をリセット。signal_key 指定時は個別、無指定は全リセット"""
+    data = data or {}
+    signal_key = data.get("signal_key")
+    if signal_key:
+        state_tracker.reset_signal_state(signal_key)
+        return {"status": "reset", "signal_key": signal_key, "timestamp": datetime.now().isoformat()}
+    count = state_tracker.reset_all_states()
+    return {"status": "reset_all", "count": count, "timestamp": datetime.now().isoformat()}
 
 
 if __name__ == "__main__":

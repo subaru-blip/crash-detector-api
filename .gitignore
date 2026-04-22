@@ -1,4 +1,7 @@
 .env
 cache.db
+signal_state.db
+budget.db
 __pycache__/
 *.pyc
+.agent-trace/
