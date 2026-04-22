@@ -142,14 +142,14 @@ SYMBOLS = {
         "ticker_display": "GDX",
         "proxy_ticker": "GDX",
         "type": "us_etf",
-        "broker": "楽天証券",
+        "broker": "SBI証券",
         "broker_section": "外国株式 > 米国株式 > ETF検索",
         "search_keyword": "GDX",
-        "order_method": "株数指定（ドル建て）",
+        "order_method": "株数指定（ドル建て・円貨決済）",
         "settlement_days": 3,
         "category": "金鉱株",
         "is_leveraged": False,
-        "note": "金鉱会社ETF。金価格上昇時にゴールド本体より大きく動く",
+        "note": "金鉱会社ETF。金価格上昇時にゴールド本体より大きく動く。NISA成長枠で運用（2026-04-22方針変更）",
     },
     "xom": {
         "name": "エクソンモービル",
@@ -220,30 +220,31 @@ PLAN = [
         "condition_text": "S&P500（SPY）が高値から-15%以下 or 底打ち3/7以上",
         "stage": "main",
     },
-    {
-        "slot": "nisa_gold_probe", "account": "nisa_growth", "symbol": "gld_nisa",
-        "amount": 100000, "label": "ゴールド打診買い", "priority": 3,
-        "condition": {"type": "gold_from_high", "value": -10},
-        "condition_text": "金が高値から-10%調整（打診買い。小ロット）",
-        "stage": "probe",
-    },
+    # nisa_gold_probe: 2026-04-22 実行済（PORTFOLIO に移管）
     {
         "slot": "nisa_gold_main", "account": "nisa_growth", "symbol": "gld_nisa",
-        "amount": 200000, "label": "ゴールド本格買い", "priority": 4,
+        "amount": 200000, "label": "ゴールド本格買い", "priority": 3,
         "condition": {"type": "gold_and_crash", "value": {"gold_from_high": -15, "crash_max": 30}},
         "condition_text": "金が高値から-15% かつ Crash Score 30以下",
         "stage": "main",
     },
     {
+        "slot": "nisa_gdx", "account": "nisa_growth", "symbol": "gdx",
+        "amount": 100000, "label": "GDX打診買い（金鉱株）", "priority": 4,
+        "condition": {"type": "gold_from_high", "value": -13},
+        "condition_text": "金が高値から-13%調整（打診・小ロット・SBI証券でNISA買い）",
+        "stage": "probe",
+    },
+    {
         "slot": "nisa_reserve", "account": "nisa_growth", "symbol": "emaxis_sp500",
-        "amount": 300000, "label": "予備枠（S&P500 or 状況に応じて切替）", "priority": 5,
+        "amount": 200000, "label": "予備枠（S&P500 or 状況に応じて切替）", "priority": 5,
         "condition": {"type": "bottom_or_wti",
                       "value": {"bottom_signals": 3, "wti_price_below": 90}},
         "condition_text": "底打ちシグナル3/7以上 or エネルギー急落（WTI $90以下）",
         "stage": "reserve",
     },
 
-    # ===== 特定口座（残57万） =====
+    # ===== 特定口座（残47万・GDXをNISAに移動済） =====
     {
         "slot": "tokutei_nvda_probe", "account": "tokutei", "symbol": "nvda",
         "amount": 120000, "label": "NVIDIA打診買い", "priority": 1,
@@ -266,15 +267,8 @@ PLAN = [
         "stage": "main",
     },
     {
-        "slot": "tokutei_gdx", "account": "tokutei", "symbol": "gdx",
-        "amount": 100000, "label": "GDX打診買い（金鉱株）", "priority": 4,
-        "condition": {"type": "gold_from_high", "value": -13},
-        "condition_text": "金が高値から-13%調整（打診・小ロット）",
-        "stage": "probe",
-    },
-    {
         "slot": "tokutei_xom", "account": "tokutei", "symbol": "xom",
-        "amount": 90000, "label": "XOM（エネルギー個別）", "priority": 5,
+        "amount": 90000, "label": "XOM（エネルギー個別）", "priority": 4,
         "condition": {"type": "wti_price_above", "value": 120},
         "condition_text": "WTI原油 $120超で封鎖長期化確認時",
         "stage": "main",
@@ -293,7 +287,18 @@ PORTFOLIO = [
         "invested_amount": 600000,
         "invested_date": "2026-04-07",
         "proxy_price_at_buy": 679.91,  # 購入日のSPY価格（概算評価用）
-        "note": "1回目投入",
+        "note": "1回目投入（S&P500・NISA成長枠）",
+    },
+    {
+        "slot": "nisa_gold_probe_20260422",
+        "symbol": "gld_nisa",
+        "account": "nisa_growth",
+        "invested_amount": 100000,          # 打診買い枠として10万計上（実約定 240口×¥405.30≈¥97,272）
+        "invested_date": "2026-04-22",
+        "proxy_price_at_buy": 429.57,       # 購入日のGLD価格（proxy_ticker）
+        "shares": 240,                      # 実際の購入口数
+        "actual_price_jpy": 405.30,         # 実際の約定価格（参考値・成行のため要アップデート）
+        "note": "ゴールド打診買い・NISA成長枠（425A 240口成行・SBI証券）",
     },
 ]
 
