@@ -228,13 +228,7 @@ PLAN = [
         "condition_text": "金が高値から-15% かつ Crash Score 30以下",
         "stage": "main",
     },
-    {
-        "slot": "nisa_gdx", "account": "nisa_growth", "symbol": "gdx",
-        "amount": 100000, "label": "GDX打診買い（金鉱株）", "priority": 4,
-        "condition": {"type": "gold_from_high", "value": -13},
-        "condition_text": "金が高値から-13%調整（打診・小ロット・SBI証券でNISA買い）",
-        "stage": "probe",
-    },
+    # nisa_gdx: 2026-04-24 実行済（PORTFOLIO に移管）
     {
         "slot": "nisa_reserve", "account": "nisa_growth", "symbol": "emaxis_sp500",
         "amount": 200000, "label": "予備枠（S&P500 or 状況に応じて切替）", "priority": 5,
@@ -309,6 +303,19 @@ PORTFOLIO = [
         "shares": 240,                      # 実際の購入口数
         "actual_price_jpy": 405.30,         # 実際の約定価格（参考値・成行のため要アップデート）
         "note": "ゴールド打診買い・NISA成長枠（425A 240口成行・SBI証券）",
+    },
+    {
+        "slot": "nisa_gdx_20260424",
+        "symbol": "gdx",
+        "account": "nisa_growth",
+        "invested_amount": 100000,          # 打診買い枠として10万計上（実受渡¥103,632・円貨決済）
+        "invested_date": "2026-04-24",
+        "proxy_price_at_buy": 92.50,        # GDX約定価格（$）
+        "shares": 7,                        # 約定株数
+        "actual_price_usd": 92.50,          # 指値約定
+        "actual_jpy_settlement": 103632,    # 円貨決済額（SBI精算予定: 04/28出金振替）
+        "fx_at_buy": 159.80,                # 約定時の米ドル/円レート（参考）
+        "note": "GDX打診買い・NISA成長枠（7株×$92.50指値・SBI証券・円貨決済）",
     },
 ]
 
