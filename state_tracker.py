@@ -16,7 +16,9 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "signal_state.db"
+# cache.db と統合（data_fetcher と同じDB）
+# Render 無料枠のスピンダウン時も維持される。再デプロイ時のみクリアされる。
+DB_PATH = Path(__file__).parent / "cache.db"
 
 VALID_STATES = ("active", "inactive")
 

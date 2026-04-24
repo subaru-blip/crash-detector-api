@@ -23,6 +23,7 @@ from data_fetcher import (
     fetch_sector_heatmap,
     fetch_geopolitical,
     fetch_watchlist,
+    fetch_all_daily_closes,
 )
 from crash_score import calculate_crash_score
 from investment_advisor import generate_advice
@@ -169,6 +170,9 @@ def get_investment_advice():
     watchlist_data = fetch_watchlist()
     geo_data = fetch_geopolitical()
 
+    # ヒステリシス判定用の日足終値履歴（intradayの揺れを吸収）
+    daily_closes = fetch_all_daily_closes(days=10)
+
     # 投資アドバイス生成
     advice = generate_advice(
         crash_score=crash_score,
@@ -176,6 +180,7 @@ def get_investment_advice():
         watchlist=watchlist_data,
         geopolitical=geo_data,
         bottom_signals=bottom_signals,
+        daily_closes=daily_closes,
     )
 
     return {

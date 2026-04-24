@@ -453,6 +453,65 @@ WATCHLIST = {
 }
 
 
+# ============================================================
+# 日足終値履歴（ヒステリシス判定用）
+# ============================================================
+# 日中の瞬間値で判定するとシグナルが揺れるため、日足終値ベースで発動・解除を判定する。
+# これにより清水さんが翌朝注文できるリードタイムを確保する。
+DAILY_CLOSE_TICKERS = {
+    "CL=F": "WTI原油",
+    "SPY": "S&P500 ETF",
+    "GLD": "ゴールドETF",
+    "NVDA": "NVIDIA",
+    "SOXL": "半導体3倍レバ",
+    "XLE": "エネルギーETF",
+    "GDX": "金鉱株ETF",
+}
+
+
+def fetch_daily_closes(ticker: str, days: int = 10) -> list:
+    """直近N日分の日足終値を返す。最新が末尾。[{date, close}, ...]"""
+    cache_key = f"daily_closes:{ticker}:{days}"
+    cached = get_cached(cache_key, max_age_hours=4)
+    if cached:
+        return cached
+
+    try:
+        stock = yf.Ticker(ticker)
+        # 余裕を持って倍の期間で取得（休場日を考慮）
+        hist = stock.history(period=f"{max(days * 2, 20)}d", interval="1d")
+        if hist.empty:
+            return []
+        closes = [
+            {
+                "date": idx.date().isoformat(),
+                "close": round(float(row["Close"]), 2),
+            }
+            for idx, row in hist.tail(days).iterrows()
+        ]
+        set_cache(cache_key, closes)
+        return closes
+    except Exception:
+        return []
+
+
+def fetch_all_daily_closes(days: int = 10) -> dict:
+    """ヒステリシス判定に必要な全銘柄の日足終値履歴をまとめて返す"""
+    cache_key = f"all_daily_closes:{days}"
+    cached = get_cached(cache_key, max_age_hours=4)
+    if cached:
+        return cached
+
+    result = {}
+    for ticker in DAILY_CLOSE_TICKERS.keys():
+        closes = fetch_daily_closes(ticker, days)
+        if closes:
+            result[ticker] = closes
+        time.sleep(0.5)
+    set_cache(cache_key, result)
+    return result
+
+
 def fetch_watchlist() -> dict:
     """監視銘柄の現在値と高値からの下落率"""
     cached = get_cached("watchlist", max_age_hours=6)

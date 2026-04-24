@@ -41,6 +41,70 @@ HYSTERESIS_BUFFER = {
     "bottom_or_wti": {"bottom_signals": 1, "wti_price_below": 5},
 }
 
+# 発動後この営業日数は「強制継続」する（intraday の戻りで消えないロック期間）
+# 清水さんの注文サイクル（昼・夜）に合わせ、最低でも3営業日は買い表示を維持する。
+# これで「深夜に瞬間的に閾値タッチ → 起きた時には消えている」問題を根本解消。
+HOLD_BUSINESS_DAYS = 3
+
+
+def _business_days_since(triggered_at_iso: str) -> int:
+    """triggered_at から今日までの営業日数（土日除く、発動日は含めない）"""
+    if not triggered_at_iso:
+        return 999
+    try:
+        s = datetime.fromisoformat(triggered_at_iso).date()
+    except Exception:
+        return 999
+    from datetime import date as _date, timedelta as _td
+    today = _date.today()
+    if today <= s:
+        return 0
+    count = 0
+    d = s
+    while d < today:
+        d = d + _td(days=1)
+        if d.weekday() < 5:  # 0-4 = 月-金
+            count += 1
+    return count
+
+
+def _build_close_snapshot(daily_closes: dict, watchlist: dict) -> dict:
+    """日足終値から判定用スナップショットを作る。
+    intraday の瞬間値ではなく「直近の日足終値」で発動判定するため。
+
+    Render 無料枠で signal_state.db が消えても、終値ベースで再判定すれば
+    「発動しているべき状態」は自動復元される副次効果もある。
+    """
+    if not daily_closes:
+        return {}
+
+    def latest_close(ticker):
+        items = daily_closes.get(ticker, [])
+        return items[-1]["close"] if items else None
+
+    snapshot = {}
+    spy_close = latest_close("SPY")
+    gld_close = latest_close("GLD")
+    nvda_close = latest_close("NVDA")
+    soxl_close = latest_close("SOXL")
+    wti_close = latest_close("CL=F")
+
+    spy_high = watchlist.get("SPY", {}).get("high_52w")
+    gld_high = watchlist.get("GLD", {}).get("high_52w")
+    nvda_high = watchlist.get("NVDA", {}).get("high_52w")
+
+    if spy_close and spy_high and spy_high > 0:
+        snapshot["sp500_from_high"] = ((spy_close - spy_high) / spy_high) * 100
+    if gld_close and gld_high and gld_high > 0:
+        snapshot["gold_from_high"] = ((gld_close - gld_high) / gld_high) * 100
+    if nvda_close and nvda_high and nvda_high > 0:
+        snapshot["nvda_from_high"] = ((nvda_close - nvda_high) / nvda_high) * 100
+    if soxl_close is not None:
+        snapshot["soxl_price"] = soxl_close
+    if wti_close is not None:
+        snapshot["wti_price"] = wti_close
+    return snapshot
+
 
 # ============================================================
 # 銘柄マスタ
@@ -872,17 +936,26 @@ def _build_progress_text(ctype, cval, crash_score, sp500_from_high, gold_from_hi
 
 def evaluate_plan_condition(plan_item, crash_score, sp500_from_high, gold_from_high,
                              nvda_from_high, soxl_price, wti_price, bottom_signals_met,
-                             use_hysteresis=True):
+                             close_snapshot=None, use_hysteresis=True):
     """
-    計画条件を判定。ヒステリシスを適用する（デフォルト）。
+    計画条件を判定。終値ベース + 3営業日継続方式（2026-04-24〜）。
+
+    発動:
+        - 日足終値ベースの指標で閾値到達（intradayの瞬間値は無視）
+        - close_snapshot が無い場合は intraday 値で判定（後方互換）
+    継続:
+        - 発動後 HOLD_BUSINESS_DAYS 営業日は強制継続（清水さんの注文サイクル対応）
+    解除:
+        - 保護期間経過 かつ 終値ベースで解除閾値に戻った時のみ
 
     返却:
         met: 実際に発動状態か（ヒステリシス適用後）
         progress_text: UI表示用の進捗テキスト
-        hysteresis_state: 'inactive' | 'just_fired' | 'active' | 'released' | 'disabled'
+        hysteresis_state: 状態表記
             - inactive: 未発動、閾値未達
-            - just_fired: 今回の判定で発動（inactive→active）
-            - active: 発動中（解除閾値に戻っていない）
+            - just_fired: 今回の判定で発動（inactive→active・終値ベース）
+            - active_hold: 発動中・保護期間内（強制継続・残日数をprogressに表示）
+            - active: 発動中・保護期間後（終値で継続中 or 解除閾値未達）
             - released: 解除閾値まで戻って解除（active→inactive）
             - disabled: ヒステリシス無効時
     """
@@ -891,47 +964,79 @@ def evaluate_plan_condition(plan_item, crash_score, sp500_from_high, gold_from_h
     cval = cond["value"]
     key = f"plan:{plan_item.get('slot', ctype)}"
 
+    # intraday 値ベースの進捗テキスト（体感に合わせた表示用）
     progress_text = _build_progress_text(
         ctype, cval, crash_score, sp500_from_high, gold_from_high,
         nvda_from_high, soxl_price, wti_price, bottom_signals_met,
     )
-    fired_now = _evaluate_raw_condition(
+    fired_intraday = _evaluate_raw_condition(
         ctype, cval, crash_score, sp500_from_high, gold_from_high,
         nvda_from_high, soxl_price, wti_price, bottom_signals_met,
     )
 
+    # 終値ベースの指標（発動/解除判定に使う・揺れ防止）
+    cs = close_snapshot or {}
+    close_sp500_from_high = cs.get("sp500_from_high", sp500_from_high)
+    close_gold_from_high = cs.get("gold_from_high", gold_from_high)
+    close_nvda_from_high = cs.get("nvda_from_high", nvda_from_high)
+    close_soxl_price = cs.get("soxl_price", soxl_price)
+    close_wti_price = cs.get("wti_price", wti_price)
+
+    fired_by_close = _evaluate_raw_condition(
+        ctype, cval, crash_score, close_sp500_from_high, close_gold_from_high,
+        close_nvda_from_high, close_soxl_price, close_wti_price, bottom_signals_met,
+    )
+
     if not use_hysteresis:
-        return {"met": fired_now, "progress_text": progress_text, "hysteresis_state": "disabled"}
+        return {"met": fired_intraday, "progress_text": progress_text, "hysteresis_state": "disabled"}
 
     buffer = HYSTERESIS_BUFFER.get(ctype, 0)
     prev_state = state_tracker.get_signal_state(key)
+    state_detail = state_tracker.get_signal_detail(key)
 
     if prev_state == "active":
-        # 発動中 → 解除条件をチェック
+        elapsed = _business_days_since(state_detail.get("triggered_at"))
+        remaining_hold = max(0, HOLD_BUSINESS_DAYS - elapsed)
+
+        if remaining_hold > 0:
+            # 保護期間内 → 無条件継続（intradayが戻っていても維持）
+            return {
+                "met": True,
+                "progress_text": progress_text + f" ※発動中（保護期間 あと{remaining_hold}営業日）",
+                "hysteresis_state": "active_hold",
+            }
+
+        # 保護期間終了 → 終値ベースで継続/解除を判定
+        if fired_by_close:
+            return {
+                "met": True,
+                "progress_text": progress_text + " ※発動継続（終値で閾値継続中）",
+                "hysteresis_state": "active",
+            }
+
         released = _is_release_condition_met(
-            ctype, cval, buffer, crash_score, sp500_from_high, gold_from_high,
-            nvda_from_high, soxl_price, wti_price, bottom_signals_met,
+            ctype, cval, buffer, crash_score, close_sp500_from_high, close_gold_from_high,
+            close_nvda_from_high, close_soxl_price, close_wti_price, bottom_signals_met,
         )
         if released:
             state_tracker.set_signal_state(key, "inactive")
             return {
                 "met": False,
-                "progress_text": progress_text + " ※解除閾値まで戻り発動解除",
+                "progress_text": progress_text + " ※解除閾値まで戻り発動解除（終値ベース）",
                 "hysteresis_state": "released",
             }
-        # 発動継続（ヒステリシス）
         return {
             "met": True,
-            "progress_text": progress_text + " ※発動継続（ヒステリシス）",
+            "progress_text": progress_text + " ※発動継続（解除閾値未達・終値ベース）",
             "hysteresis_state": "active",
         }
 
-    # 未発動 → 通常判定
-    if fired_now:
+    # 未発動 → 終値ベースで発動判定（intradayの瞬間タッチでは発動させない）
+    if fired_by_close:
         state_tracker.set_signal_state(key, "active")
         return {
             "met": True,
-            "progress_text": progress_text + " ※今回発動",
+            "progress_text": progress_text + f" ※今回発動・終値ベース（最低{HOLD_BUSINESS_DAYS}営業日は継続）",
             "hysteresis_state": "just_fired",
         }
     return {
@@ -942,8 +1047,10 @@ def evaluate_plan_condition(plan_item, crash_score, sp500_from_high, gold_from_h
 
 
 def build_action_list(macro, portfolio_summary, buyback_summary, crash_score, indicators,
-                       watchlist, geopolitical, bottom_signals_met):
-    """今日やることの優先順リスト"""
+                       watchlist, geopolitical, bottom_signals_met, daily_closes=None):
+    """今日やることの優先順リスト。
+    daily_closes が渡されるとヒステリシス判定が終値ベース＋3営業日継続になる。"""
+    close_snapshot = _build_close_snapshot(daily_closes or {}, watchlist)
     sp500_price = indicators.get("ma_deviation", {}).get("price")
     sp500_high = sp500_price * 1.02 if sp500_price else None  # TODO: 動的取得
     # SPY高値はdata_fetcher側で取得している想定。とりあえず現在値の+2%を仮置き→あとで差し替え
@@ -1023,6 +1130,7 @@ def build_action_list(macro, portfolio_summary, buyback_summary, crash_score, in
         result = evaluate_plan_condition(
             plan, crash_score, sp500_from_high, gold_from_high,
             nvda_from_high, soxl_price, wti_price, bottom_signals_met,
+            close_snapshot=close_snapshot,
         )
 
         urgency = "medium" if result["met"] else "none"
@@ -1186,8 +1294,10 @@ def evaluate_forex(usdjpy):
 # ============================================================
 # 統合（generate_advice）
 # ============================================================
-def generate_advice(crash_score, indicators, watchlist, geopolitical, bottom_signals=None):
-    """メインエントリー: ダッシュボード用の完全な advice を返す"""
+def generate_advice(crash_score, indicators, watchlist, geopolitical, bottom_signals=None,
+                    daily_closes=None):
+    """メインエントリー: ダッシュボード用の完全な advice を返す。
+    daily_closes が渡されるとヒステリシスが終値ベース＋3営業日継続で判定される。"""
     # 基礎データ
     fear_greed = indicators.get("fear_greed", {}).get("value")
     vix = indicators.get("vix", {}).get("value")
@@ -1227,7 +1337,8 @@ def generate_advice(crash_score, indicators, watchlist, geopolitical, bottom_sig
 
     # アクションリスト
     action_list = build_action_list(macro, portfolio, buyback, crash_score, indicators,
-                                      watchlist, geopolitical, bottom_met)
+                                      watchlist, geopolitical, bottom_met,
+                                      daily_closes=daily_closes)
 
     # セクター状況（参考）
     sectors_info = evaluate_sector_info(wti, xle_data, nvda_data, soxl_data,
