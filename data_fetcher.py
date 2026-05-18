@@ -396,8 +396,11 @@ def fetch_geopolitical() -> dict:
     if cached:
         return cached
 
+    # WTI は CL=F 専用（USO は WTI 連動 ETF だが価格レベルが違うため絶対値での代用不可）
+    # 2026-05-18: USO $148.23 が WTI として誤表示されたバグ修正。
+    # CL=F 直接取得失敗時は fetch_daily_closes("CL=F") の日足終値にフォールバックする。
     tickers = {
-        "wti": ["CL=F", "USO"],       # WTI先物、フォールバック: USO ETF
+        "wti": ["CL=F"],              # WTI は CL=F 専用
         "gold": ["GC=F", "GLD"],       # 金先物、フォールバック: GLD ETF
         "usdjpy": ["JPY=X", "USDJPY=X"],
     }
@@ -422,6 +425,18 @@ def fetch_geopolitical() -> dict:
             except Exception:
                 time.sleep(1)
                 continue
+        if not fetched and name == "wti":
+            # WTI 専用: CL=F 直接取得失敗時、日足終値キャッシュから取り直す
+            daily = fetch_daily_closes("CL=F", days=2)
+            if len(daily) >= 2:
+                current = daily[-1]["close"]
+                prev = daily[-2]["close"]
+                result[name] = {
+                    "value": current,
+                    "change_pct": round((current / prev - 1) * 100, 2),
+                    "ticker_used": "CL=F (daily_close fallback)",
+                }
+                fetched = True
         if not fetched:
             # 全ティッカー失敗 → 期限切れキャッシュからでも取る
             stale = get_cached(f"geopolitical_{name}_stale", max_age_hours=168)  # 1週間
