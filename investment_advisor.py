@@ -287,10 +287,14 @@ PLAN = [
     # nisa_gold_probe: 2026-04-22 実行済（PORTFOLIO に移管）
     {
         "slot": "nisa_gold_main", "account": "nisa_growth", "symbol": "gld_nisa",
-        "amount": 200000, "label": "ゴールド本格買い", "priority": 3,
-        "condition": {"type": "gold_and_crash", "value": {"gold_from_high": -15, "crash_max": 30}},
-        "condition_text": "金が高値から-15% かつ Crash Score 30以下",
+        "amount": 200000, "label": "ゴールド本格買い（2026-05-18 手動発動済み・425A発注待ち）", "priority": 3,
+        "condition": {"type": "manual", "value": None},
+        "condition_text": "2026-05-18 手動発動済み（金-15.9% 価格条件達成・Crash 60の機会損失リスク回避）/ SBI証券 425A 約20万 発注待ち",
         "stage": "main",
+        "note": "2026-05-18 手動発動。当初の自動条件は gold_and_crash (金-15% & Crash 30以下)。"
+                "金は-15.9%で価格条件達成だが Crash Score 60の強欲圏で AND条件が詰まる構造。"
+                "戦略書記載の『金は長期で上がる』方針 + JPM/GS強気見通し + 4/7エネルギー取り逃し反省で手動発動判断。"
+                "約定後 PORTFOLIO へ移管。",
     },
     # nisa_gdx: 2026-04-24 実行済（PORTFOLIO に移管）
     {
