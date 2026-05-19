@@ -268,21 +268,20 @@ ACCOUNTS = {
 # - 個別株・セクターETFは「打診買い→本格買い」の2段階
 # - 集中リスクを減らすため各ポジションは小ロット
 PLAN = [
-    # ===== NISA成長枠（残180万） =====
+    # ===== NISA成長枠（残140万・2026-05-19 月次積立化で再設計） =====
+    # 2026-05-19: 旧 nisa_sp500_2 (60万・SPY-10%) と nisa_sp500_3 (60万・SPY-15% or 底打ち) を
+    # 月次積立 (nisa_growth_dca) に統合。複利エンジン強化方針（清水さん月可処分¥25万 → 月¥10万を機械投入）
     {
-        "slot": "nisa_sp500_2", "account": "nisa_growth", "symbol": "emaxis_sp500",
-        "amount": 600000, "label": "2回目投入（S&P500）", "priority": 1,
-        "condition": {"type": "sp500_from_high", "value": -10},
-        "condition_text": "S&P500（SPY）が高値から-10%以下まで下落",
-        "stage": "main",
-    },
-    {
-        "slot": "nisa_sp500_3", "account": "nisa_growth", "symbol": "emaxis_sp500",
-        "amount": 600000, "label": "3回目投入（S&P500）", "priority": 2,
-        "condition": {"type": "sp500_or_bottom",
-                      "value": {"sp500_from_high": -15, "bottom_signals": 3}},
-        "condition_text": "S&P500（SPY）が高値から-15%以下 or 底打ち3/7以上",
-        "stage": "main",
+        "slot": "nisa_growth_dca", "account": "nisa_growth", "symbol": "emaxis_sp500",
+        "amount": 700000, "label": "S&P500 月次積立（NISA成長枠・2026-06開始）", "priority": 0,
+        "condition": {"type": "scheduled_dca",
+                      "value": {"monthly": 100000, "months": 7, "start": "2026-06"}},
+        "condition_text": "毎月¥10万 × 7ヶ月（2026-06〜12月）を SBI 自動引落で執行",
+        "stage": "dca",
+        "note": "2026-05-19 開始決定。複利エンジン強化方針。"
+                "月可処分¥25万のうち月¥10万を機械的に投資 → 月総投資¥20万（つみたて10+成長10）。"
+                "暴落時もスキップせず継続。心理に左右されない複利エンジン。"
+                "旧 nisa_sp500_2/nisa_sp500_3 を統合・代替。",
     },
     # nisa_gold_probe: 2026-04-22 実行済（PORTFOLIO に移管）
     {
@@ -299,11 +298,14 @@ PLAN = [
     # nisa_gdx: 2026-04-24 実行済（PORTFOLIO に移管）
     {
         "slot": "nisa_reserve", "account": "nisa_growth", "symbol": "emaxis_sp500",
-        "amount": 200000, "label": "予備枠（S&P500 or 状況に応じて切替）", "priority": 5,
+        "amount": 700000, "label": "スポット予備枠（暴落・押し目用・2026-05-19 増額）", "priority": 5,
         "condition": {"type": "bottom_or_wti",
                       "value": {"bottom_signals": 3, "wti_price_below": 90}},
         "condition_text": "底打ちシグナル3/7以上 or エネルギー急落（WTI $90以下）",
         "stage": "reserve",
+        "note": "2026-05-19 月次積立化に伴い 20万→70万に増額。"
+                "大暴落（Score 20以下）時の最後の砦。分割投入推奨（30+30+10 等）。"
+                "貯金250万からの追加投入と組み合わせて使う。",
     },
 
     # ===== 特定口座（残47万・GDXをNISAに移動済） =====
@@ -836,6 +838,9 @@ def _evaluate_raw_condition(ctype, cval, crash_score, sp500_from_high, gold_from
     if ctype == "manual":
         # 清水さんの判断で任意発動する枠。自動では発動しない
         return False
+    if ctype == "scheduled_dca":
+        # 月次積立は SBI 自動引落で機械的に執行されるため、Crash Score 判定の対象外
+        return False
     return False
 
 
@@ -935,6 +940,11 @@ def _build_progress_text(ctype, cval, crash_score, sp500_from_high, gold_from_hi
         return f"底打ち{bottom_signals_met}/7 目標{bs}以上 ｜ WTI {wti_str}/目標${wti_th}以下（OR）"
     if ctype == "manual":
         return "清水さんの判断で任意発動（自動トリガーなし）"
+    if ctype == "scheduled_dca":
+        monthly = cval.get("monthly", 0)
+        months = cval.get("months", 0)
+        start = cval.get("start", "")
+        return f"月¥{monthly:,} × {months}ヶ月（{start}〜）を SBI 自動積立で執行"
     return ""
 
 
