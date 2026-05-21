@@ -1264,15 +1264,18 @@ def _semi_comment(nvda_from_high, soxl_price, crash_score):
 
 
 def _broad_comment(crash_score, sp500_price, sp500_high):
+    # Crash Score 標準5段階区分（0-20/20-40/40-60/60-80/80-100）に準拠
     if crash_score is None:
         return "データ不足"
     if crash_score <= 20:
         return "極度の恐怖。歴史的買い場"
-    if crash_score <= 30:
+    if crash_score <= 40:
         return "恐怖圏。段階買いのチャンス"
-    if crash_score <= 50:
-        return "中立圏。急がない"
-    return "強欲圏。利確検討"
+    if crash_score <= 60:
+        return "中立圏。通常運用"
+    if crash_score <= 80:
+        return "強欲圏。利確検討"
+    return "極度の強欲。売り検討ゾーン"
 
 
 def _gold_comment(gld_from_high, crash_score):
