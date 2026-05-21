@@ -1237,6 +1237,34 @@ def evaluate_sector_info(wti, xle_data, nvda_data, soxl_data, gold_price, gld_da
     }
 
 
+# セクター → 紐づく PLAN slot のマッピング（comment 発動状態バッジ用）
+# scheduled_dca（月次積立・自動執行）は「発動/待機」概念の外なので除外
+SECTOR_PLAN_SLOTS = {
+    "energy": ["tokutei_xom"],
+    "semiconductor": ["tokutei_nvda_probe", "tokutei_nvda_main", "tokutei_soxl"],
+    "broad_market": ["nisa_reserve"],
+    "gold": ["nisa_gold_main"],
+}
+
+
+def _annotate_sector_signals(sectors_info, action_list):
+    """各セクターの comment 末尾に発動状態バッジを付与する。
+    comment（市場のムード）と action_list（実アクション）の乖離による
+    『買い時と書いてあるのに発動しない』混乱を防ぐ。"""
+    ready_by_slot = {a.get("slot"): a.get("ready", False) for a in action_list}
+    for sector_key, sector in sectors_info.items():
+        slots = SECTOR_PLAN_SLOTS.get(sector_key, [])
+        fired = [s for s in slots if ready_by_slot.get(s)]
+        if fired:
+            badge = "🔴 アクション検討（買いシグナル発動中）"
+            sector["signal_status"] = "fired"
+        else:
+            badge = "⏸ 待機中（今は新規アクション不要）"
+            sector["signal_status"] = "waiting"
+        sector["comment"] = f"{sector['comment']}｜{badge}"
+    return sectors_info
+
+
 def _energy_comment(wti, xle_from_high):
     if wti is None:
         return "原油データ取得失敗"
@@ -1361,6 +1389,8 @@ def generate_advice(crash_score, indicators, watchlist, geopolitical, bottom_sig
     sectors_info = evaluate_sector_info(wti, xle_data, nvda_data, soxl_data,
                                           gold_price, gld_data, crash_score,
                                           sp500_price, sp500_high)
+    # comment に発動状態バッジを付与（comment と action_list の乖離を解消）
+    _annotate_sector_signals(sectors_info, action_list)
 
     # 為替
     forex = evaluate_forex(usdjpy)
