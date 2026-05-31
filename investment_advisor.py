@@ -230,6 +230,54 @@ SYMBOLS = {
         "is_leveraged": False,
         "note": "世界最大級の石油メジャー。高配当",
     },
+    # ===== AI電力テーマ（2026-05-31 追加・プランA）=====
+    "xlu": {
+        "name": "XLU（米ユーティリティETF）",
+        "short_name": "XLU 公益",
+        "ticker_display": "XLU",
+        "proxy_ticker": "XLU",
+        "type": "us_etf",
+        "broker": "楽天証券",
+        "broker_section": "外国株式 > 米国株式 > ETF",
+        "search_keyword": "XLU",
+        "order_method": "株数指定（ドル建て）",
+        "settlement_days": 3,
+        "category": "AI電力・安定コア",
+        "is_leveraged": False,
+        "note": "米国大型ユーティリティETF。経費率0.09%。AI電力需要の『安定コア』。"
+                "配当をもらいながら長期保有向き。SBI取扱確認済・楽天は要最終確認",
+    },
+    "grid_ai_power": {
+        "name": "GRID/AIPO（AI電力テーマETF）",
+        "short_name": "AI電力ETF",
+        "ticker_display": "GRID / AIPO",
+        "proxy_ticker": "GRID",
+        "type": "us_etf",
+        "broker": "楽天証券",
+        "broker_section": "外国株式 > 米国株式 > ETF",
+        "search_keyword": "GRID（または AIPO）",
+        "order_method": "株数指定（ドル建て）",
+        "settlement_days": 3,
+        "category": "AI電力・一発逆転",
+        "is_leveraged": False,
+        "note": "送電網ETF(GRID)/AI×電力テーマETF(AIPO)。一発逆転（アップサイド）枠。"
+                "新興ETFのため楽天/SBIの取扱を要確認（買えなければXLU厚め or VOLT/PAVEで代替）",
+    },
+    "ura": {
+        "name": "URA（ウランETF）",
+        "short_name": "URA ウラン",
+        "ticker_display": "URA",
+        "proxy_ticker": "URA",
+        "type": "us_etf",
+        "broker": "楽天証券",
+        "broker_section": "外国株式 > 米国株式 > ETF",
+        "search_keyword": "URA",
+        "order_method": "株数指定（ドル建て）",
+        "settlement_days": 3,
+        "category": "AI電力・宝くじ枠",
+        "is_leveraged": False,
+        "note": "ウラン/原子力ETF。AI電力テーマの『宝くじ枠』（高ボラ・少額）。楽天取扱確認済",
+    },
 }
 
 # 口座マスタ
@@ -330,22 +378,30 @@ PLAN = [
         "condition_text": "SOXL $30以下 かつ Crash Score 20以下",
         "stage": "main",
     },
+    # 2026-05-31: XOM枠（WTI$120超で買う順張り）を AI電力テーマ「安定コア」へ振替（プランA）。
+    # 理由: AI電力需要は石油でなく電力/ガス/原子力に直撃。XOMの原油高条件はテーマと不整合だったため。
     {
-        "slot": "tokutei_xom", "account": "tokutei", "symbol": "xom",
-        "amount": 90000, "label": "XOM（エネルギー個別）", "priority": 4,
-        "condition": {"type": "wti_price_above", "value": 120},
-        "condition_text": "WTI原油 $120超で封鎖長期化確認時",
-        "stage": "main",
-    },
-    {
-        "slot": "tokutei_free_reserve", "account": "tokutei", "symbol": "nvda",
-        "amount": 100000, "label": "フリー予備枠（状況判断・楽天証券）", "priority": 5,
+        "slot": "tokutei_ai_power_core", "account": "tokutei", "symbol": "xlu",
+        "amount": 90000, "label": "AI電力テーマ 安定コア（XLU等・楽天）", "priority": 4,
         "condition": {"type": "manual", "value": None},
-        "condition_text": "清水さんの判断で任意発動（相場状況・新規機会に柔軟対応）",
+        "condition_text": "清水さん判断で任意発動（AI電力テーマ・2026-05-31 プランA採用）",
+        "stage": "main",
+        "note": "2026-05-31 方針: 旧 tokutei_xom（XOM・WTI$120超）から振替。"
+                "AI電力長期テーマの『安定コア』。代表=XLU(米ユーティリティETF・経費0.09%)。"
+                "★配分は未確定（一発逆転の濃さ・楽天取扱・425A約定詳細を清水さん確認中）。"
+                "本格組み入れは2027年1月の新NISA成長枠で長期非課税で行う計画。",
+    },
+    # 2026-05-31: フリー予備枠を AI電力テーマ「一発逆転」枠に充当（プランA）。
+    {
+        "slot": "tokutei_ai_power_growth", "account": "tokutei", "symbol": "grid_ai_power",
+        "amount": 100000, "label": "AI電力テーマ 一発逆転（GRID/AIPO/URA等・楽天）", "priority": 5,
+        "condition": {"type": "manual", "value": None},
+        "condition_text": "清水さんの判断で任意発動（AI電力テーマの一発逆転枠・2026-05-31 プランA採用）",
         "stage": "free",
-        "note": "2026-04-22 追加。GDXをNISAに移した分の10万を特定口座に戻した枠。"
-                "半導体押し目・SMH・AVGO等、状況に応じて使う。"
-                "※ TSM(台湾セミコン)は2027年台湾有事リスクのため避ける方針",
+        "note": "2026-05-31 方針: 旧フリー予備枠10万を AI電力テーマの『一発逆転（アップサイド）』に充当。"
+                "候補=GRID/AIPO（送電網・AI×電力ETF）+ URA（ウラン・宝くじ枠）。"
+                "★配分は未確定（新興ETFの楽天/SBI取扱を要確認。買えなければXLU厚め or VOLT/PAVEで代替）。"
+                "柔軟枠の性格は維持（清水さん任意発動）。",
     },
 ]
 
@@ -1240,7 +1296,8 @@ def evaluate_sector_info(wti, xle_data, nvda_data, soxl_data, gold_price, gld_da
 # セクター → 紐づく PLAN slot のマッピング（comment 発動状態バッジ用）
 # scheduled_dca（月次積立・自動執行）は「発動/待機」概念の外なので除外
 SECTOR_PLAN_SLOTS = {
-    "energy": ["tokutei_xom"],
+    # 2026-05-31: XOM枠を AI電力テーマへ振替したため、energy セクターに紐づく自動発動slotは無し
+    "energy": [],
     "semiconductor": ["tokutei_nvda_probe", "tokutei_nvda_main", "tokutei_soxl"],
     "broad_market": ["nisa_reserve"],
     "gold": ["nisa_gold_main"],
