@@ -332,17 +332,7 @@ PLAN = [
                 "旧 nisa_sp500_2/nisa_sp500_3 を統合・代替。",
     },
     # nisa_gold_probe: 2026-04-22 実行済（PORTFOLIO に移管）
-    {
-        "slot": "nisa_gold_main", "account": "nisa_growth", "symbol": "gld_nisa",
-        "amount": 200000, "label": "ゴールド本格買い（2026-05-18 手動発動済み・425A発注待ち）", "priority": 3,
-        "condition": {"type": "manual", "value": None},
-        "condition_text": "2026-05-18 手動発動済み（金-15.9% 価格条件達成・Crash 60の機会損失リスク回避）/ SBI証券 425A 約20万 発注待ち",
-        "stage": "main",
-        "note": "2026-05-18 手動発動。当初の自動条件は gold_and_crash (金-15% & Crash 30以下)。"
-                "金は-15.9%で価格条件達成だが Crash Score 60の強欲圏で AND条件が詰まる構造。"
-                "戦略書記載の『金は長期で上がる』方針 + JPM/GS強気見通し + 4/7エネルギー取り逃し反省で手動発動判断。"
-                "約定後 PORTFOLIO へ移管。",
-    },
+    # nisa_gold_main: 2026-05-31 約定済（425A 520口×¥383.1≈¥199,212）→ PORTFOLIO に移管
     # nisa_gdx: 2026-04-24 実行済（PORTFOLIO に移管）
     {
         "slot": "nisa_reserve", "account": "nisa_growth", "symbol": "emaxis_sp500",
@@ -442,6 +432,18 @@ PORTFOLIO = [
         "actual_jpy_settlement": 103632,    # 円貨決済額（SBI精算予定: 04/28出金振替）
         "fx_at_buy": 159.80,                # 約定時の米ドル/円レート（参考）
         "note": "GDX打診買い・NISA成長枠（7株×$92.50指値・SBI証券・円貨決済）",
+    },
+    {
+        "slot": "nisa_gold_main_20260531",
+        "symbol": "gld_nisa",
+        "account": "nisa_growth",
+        "invested_amount": 200000,          # 本格買い枠20万（実約定 520口×¥383.1≈¥199,212）
+        "invested_date": "2026-05-31",      # 清水さん報告日（実際の約定日は5/25期限後〜5/31の間。違えば更新）
+        "proxy_price_at_buy": 417.12,       # GLD価格（proxy_ticker）。約定日のGLD不明のため5/31時点$417.12で概算
+        "shares": 520,                      # 約定口数（指値¥383・520口で発注）
+        "actual_price_jpy": 383.1,          # 425A 実際の約定単価（円）
+        "note": "ゴールド本格買い・NISA成長枠（425A 520口×¥383.1・SBI証券）。"
+                "2026-05-18 手動発動 → 5/31 約定報告。旧 PLAN nisa_gold_main から移管。",
     },
 ]
 
