@@ -46,8 +46,20 @@ def get_db():
     return conn
 
 
+def _has_nan(value) -> bool:
+    """dict/list の中に float nan が含まれていれば True"""
+    import math
+    if isinstance(value, float) and math.isnan(value):
+        return True
+    if isinstance(value, dict):
+        return any(_has_nan(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_has_nan(v) for v in value)
+    return False
+
+
 def get_cached(key: str, max_age_hours: int = 12):
-    """キャッシュからデータ取得（max_age_hours以内なら有効）"""
+    """キャッシュからデータ取得（max_age_hours以内なら有効・nan含む値は無効）"""
     conn = get_db()
     row = conn.execute(
         "SELECT value, updated_at FROM cache WHERE key = ?", (key,)
@@ -57,12 +69,17 @@ def get_cached(key: str, max_age_hours: int = 12):
     if row:
         updated = datetime.fromisoformat(row[1])
         if datetime.now() - updated < timedelta(hours=max_age_hours):
-            return json.loads(row[0])
+            data = json.loads(row[0])
+            if _has_nan(data):
+                return None  # nan を含むキャッシュは無効として再取得させる
+            return data
     return None
 
 
 def set_cache(key: str, value):
-    """キャッシュにデータ保存"""
+    """キャッシュにデータ保存（nan を含む値は保存しない）"""
+    if _has_nan(value):
+        return  # nan を含む結果はキャッシュしない（次回リクエストで再取得）
     conn = get_db()
     conn.execute(
         "INSERT OR REPLACE INTO cache (key, value, updated_at) VALUES (?, ?, ?)",
@@ -313,14 +330,22 @@ def fetch_ma_deviation(ticker: str = "SPY", ma_period: int = 200) -> dict:
         return cached
 
     try:
+        import math
         stock = yf.Ticker(ticker)
         hist = stock.history(period="1y")
+        # NaN行を除去（yfinanceの破壊的変更対策）
+        hist = hist.dropna(subset=["Close"])
         if len(hist) < ma_period:
             return {"value": None, "error": f"{ma_period}日分のデータ不足"}
 
         ma = hist["Close"].rolling(window=ma_period).mean()
         current_price = float(hist["Close"].iloc[-1])
         current_ma = float(ma.iloc[-1])
+
+        # nan チェック（yfinanceが nan を返す場合の安全網）
+        if math.isnan(current_price) or math.isnan(current_ma) or current_ma == 0:
+            return {"value": None, "error": "yfinanceが NaN を返しました（データ取得失敗）"}
+
         deviation = ((current_price - current_ma) / current_ma) * 100
 
         result = {

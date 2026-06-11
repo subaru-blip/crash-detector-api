@@ -721,10 +721,13 @@ def evaluate_holding_sell(holding, macro, watchlist, geopolitical, sp500_price, 
     is_leveraged = sym.get("is_leveraged", False)
 
     # 含み益率を概算
+    import math
     current_price = _current_price(sym_key, watchlist, geopolitical, sp500_price)
     buy_price = holding.get("proxy_price_at_buy")
     if current_price and buy_price:
         profit_pct = ((current_price - buy_price) / buy_price) * 100
+        if math.isnan(profit_pct):
+            profit_pct = None
     else:
         profit_pct = None
 
