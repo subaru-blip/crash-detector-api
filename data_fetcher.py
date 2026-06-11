@@ -58,6 +58,18 @@ def _has_nan(value) -> bool:
     return False
 
 
+def _safe_float(value) -> float | None:
+    """nan / inf を None に変換する安全な float 変換。JSON シリアライズ安全。"""
+    import math
+    try:
+        v = float(value)
+        if math.isnan(v) or math.isinf(v):
+            return None
+        return v
+    except (TypeError, ValueError):
+        return None
+
+
 def get_cached(key: str, max_age_hours: int = 12):
     """キャッシュからデータ取得（max_age_hours以内なら有効・nan含む値は無効）"""
     conn = get_db()
@@ -436,9 +448,13 @@ def fetch_geopolitical() -> dict:
             try:
                 stock = yf.Ticker(ticker)
                 hist = stock.history(period="5d")
+                hist = hist.dropna(subset=["Close"])
                 if len(hist) >= 2:
-                    current = float(hist["Close"].iloc[-1])
-                    prev = float(hist["Close"].iloc[-2])
+                    current = _safe_float(hist["Close"].iloc[-1])
+                    prev = _safe_float(hist["Close"].iloc[-2])
+                    if current is None or prev is None or prev == 0:
+                        time.sleep(1)
+                        continue
                     result[name] = {
                         "value": round(current, 2),
                         "change_pct": round((current / prev - 1) * 100, 2),
@@ -522,13 +538,15 @@ def fetch_daily_closes(ticker: str, days: int = 10) -> list:
         hist = stock.history(period=f"{max(days * 2, 20)}d", interval="1d")
         if hist.empty:
             return []
-        closes = [
-            {
-                "date": idx.date().isoformat(),
-                "close": round(float(row["Close"]), 2),
-            }
-            for idx, row in hist.tail(days).iterrows()
-        ]
+        hist = hist.dropna(subset=["Close"])
+        closes = []
+        for idx, row in hist.tail(days).iterrows():
+            close_val = _safe_float(row["Close"])
+            if close_val is not None:
+                closes.append({
+                    "date": idx.date().isoformat(),
+                    "close": round(close_val, 2),
+                })
         set_cache(cache_key, closes)
         return closes
     except Exception:
@@ -563,17 +581,20 @@ def fetch_watchlist() -> dict:
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period="1y")
+            hist = hist.dropna(subset=["Close"])
             if not hist.empty:
-                current = float(hist["Close"].iloc[-1])
-                high_52w = float(hist["Close"].max())
-                drawdown = ((current - high_52w) / high_52w) * 100
-
-                result[ticker] = {
-                    "label": label,
-                    "price": round(current, 2),
-                    "high_52w": round(high_52w, 2),
-                    "drawdown_pct": round(drawdown, 1),
-                }
+                current = _safe_float(hist["Close"].iloc[-1])
+                high_52w = _safe_float(hist["Close"].max())
+                if current is None or high_52w is None or high_52w == 0:
+                    result[ticker] = {"label": label, "error": "NaN値を受信"}
+                else:
+                    drawdown = ((current - high_52w) / high_52w) * 100
+                    result[ticker] = {
+                        "label": label,
+                        "price": round(current, 2),
+                        "high_52w": round(high_52w, 2),
+                        "drawdown_pct": round(drawdown, 1),
+                    }
             time.sleep(1)
         except Exception:
             result[ticker] = {"label": label, "error": "取得失敗"}
