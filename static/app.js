@@ -471,11 +471,12 @@ function renderSignals(bottomSignals) {
 
 function renderSectors(data) {
   const grid = document.getElementById('sectorGrid');
-  if (!grid || !data.sectors) return;
+  if (!grid || !data || !data.sectors) return;
   grid.innerHTML = '';
   for (const [name, info] of Object.entries(data.sectors)) {
     if (info.error) continue;
     const change = info.change_1d;
+    if (typeof change !== 'number') continue;
     const color = change >= 0 ? 'color-green' : 'color-red';
     const card = document.createElement('div');
     card.className = 'sector-card-mini';
@@ -486,7 +487,7 @@ function renderSectors(data) {
 
 function renderWatchlist(data) {
   const grid = document.getElementById('watchlistGrid');
-  if (!grid) return;
+  if (!grid || !data) return;
   grid.innerHTML = '';
   const labels = {
     SPY: 'S&P500 ETF',
@@ -515,7 +516,7 @@ function renderWatchlist(data) {
 
 function renderGeo(data) {
   const grid = document.getElementById('geoGrid');
-  if (!grid) return;
+  if (!grid || !data) return;
   grid.innerHTML = '';
   for (const [key, name] of Object.entries(GEO_NAMES)) {
     const info = data[key];
@@ -540,9 +541,10 @@ async function refreshData() {
   try {
     const [scoreData, sectorData, geoData, watchData, adviceData] = await Promise.all([
       fetchJSON('/api/score'),
-      fetchJSON('/api/sectors'),
-      fetchJSON('/api/geopolitical'),
-      fetchJSON('/api/watchlist'),
+      // 補助データは失敗しても全体を止めない（1本の500でダッシュボードが真っ白になるのを防ぐ）
+      fetchJSON('/api/sectors').catch(() => null),
+      fetchJSON('/api/geopolitical').catch(() => null),
+      fetchJSON('/api/watchlist').catch(() => null),
       fetchJSON('/api/advice').catch(() => null),
     ]);
 

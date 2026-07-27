@@ -120,8 +120,15 @@ def get_all_indicators():
 
 @app.get("/api/sectors")
 def get_sectors():
-    """セクターヒートマップ"""
-    return fetch_sector_heatmap()
+    """セクターヒートマップ
+
+    このエンドポイントが 500 を返すとダッシュボード全体が
+    「読み込みに失敗しました」になるため、失敗しても 200 で空データを返す。
+    """
+    try:
+        return fetch_sector_heatmap()
+    except Exception as e:
+        return {"sectors": {}, "source": "yfinance", "error": f"{type(e).__name__}: {e}"}
 
 
 @app.get("/api/geopolitical")

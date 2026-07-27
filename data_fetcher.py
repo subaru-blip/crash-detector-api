@@ -70,6 +70,14 @@ def _safe_float(value) -> float | None:
         return None
 
 
+def _pct_change(current, base) -> float | None:
+    """騰落率(%)を JSON safe に計算。算出不能なら None。"""
+    if current is None or not base:
+        return None
+    v = _safe_float((current / base - 1) * 100)
+    return None if v is None else round(v, 2)
+
+
 def get_cached(key: str, max_age_hours: int = 12):
     """キャッシュからデータ取得（max_age_hours以内なら有効・nan含む値は無効）"""
     conn = get_db()
@@ -402,18 +410,25 @@ def fetch_sector_heatmap() -> dict:
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period="3mo")
+            hist = hist.dropna(subset=["Close"])
+            current = d1 = None
             if len(hist) >= 2:
-                current = float(hist["Close"].iloc[-1])
-                d1 = float(hist["Close"].iloc[-2])
-                w1 = float(hist["Close"].iloc[-6]) if len(hist) > 5 else d1
-                m1 = float(hist["Close"].iloc[-22]) if len(hist) > 21 else d1
+                current = _safe_float(hist["Close"].iloc[-1])
+                d1 = _safe_float(hist["Close"].iloc[-2])
+                w1 = _safe_float(hist["Close"].iloc[-6]) if len(hist) > 5 else d1
+                m1 = _safe_float(hist["Close"].iloc[-22]) if len(hist) > 21 else d1
 
+            # change_1d が数値にならない銘柄は error 扱いにする
+            # （フロントは change_1d.toFixed() を呼ぶため None を渡せない）
+            if current is None or not d1:
+                sectors[name] = {"ticker": ticker, "error": "取得失敗"}
+            else:
                 sectors[name] = {
                     "ticker": ticker,
                     "price": round(current, 2),
-                    "change_1d": round((current / d1 - 1) * 100, 2),
-                    "change_1w": round((current / w1 - 1) * 100, 2),
-                    "change_1m": round((current / m1 - 1) * 100, 2),
+                    "change_1d": _pct_change(current, d1),
+                    "change_1w": _pct_change(current, w1),
+                    "change_1m": _pct_change(current, m1),
                 }
             time.sleep(1)  # レート制限対策
         except Exception:
